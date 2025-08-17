@@ -1,11 +1,15 @@
 import express from 'express';
 import cors from 'cors';
 import { config } from './config/config.js';
-import connectDB from './db.js'
+import connectDB from './DB/db.js'
+import productRouter from './API/products/productRouter.js'
+import clientRouter from './API/clients/clientRouter.js'
+import transactionRouter from './API/transaction/transactionRouter.js'
 
-const createApp = async () => {
-    const app = express();
+const app = express();
 
+(async () => {
+    console.log('🟢🟢 Starting server...🟢🟢');
     await connectDB()
 
     app.use(cors({
@@ -20,10 +24,6 @@ const createApp = async () => {
     }));
 
     app.use(express.json());
-
-    const productRouter = (await import('./products/productRouter.js')).default;
-    const clientRouter = (await import('./clients/clientRouter.js')).default;
-    const transactionRouter = (await import('./transaction/transactionRouter.js')).default;
 
     app.get('/', (res) => {
         res.send('Welcome to the Electron API')
@@ -42,14 +42,10 @@ const createApp = async () => {
         res.status(500).json({ error: 'Internal server error' });
     });
 
-    return app;
-}
-
-const server = createApp()
-
-server.listen(config.port, () => {
-    console.log(`✅✅ Server is running on port ${config.port}`);
-})
 
 
-export default server;
+    app.listen(config.port, () => {
+        console.log(`❗ Server is running on port ${config.port}`);
+    })
+})()
+
