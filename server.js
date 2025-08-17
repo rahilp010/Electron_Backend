@@ -26,7 +26,7 @@ const app = express();
     app.use(express.json());
 
     app.get('/', (res) => {
-        res.send('Welcome to the Electron API')
+        res.json({ message: 'Welcome to the Electron API' });
     })
     app.use('/api/products', productRouter);
     app.use('/api/clients', clientRouter);
