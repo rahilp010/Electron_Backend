@@ -25,15 +25,15 @@ const app = express();
 
     app.use(express.json());
 
-    app.get('/', (res) => {
-        res.json({ message: 'Welcome to the Electron API' });
+    app.get('/', (req, res) => {
+        res.status(200).json({ message: 'Welcome to the Electron API' });
     })
     app.use('/api/products', productRouter);
     app.use('/api/clients', clientRouter);
     app.use('/api/transaction', transactionRouter);
 
-    app.get('/api/health', (res) => {
-        res.json({ status: 'Server is running', timestamp: new Date().toISOString() });
+    app.get('/api/health', (req, res) => {
+        res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });
     });
 
     // Global error handler
