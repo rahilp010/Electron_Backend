@@ -36,7 +36,7 @@ const getTransactionById = async (req, res) => {
 // ✅ Create transaction
 const createTransaction = async (req, res) => {
     try {
-        const { clientId, productId, quantity, sellAmount, statusOfTransaction } = req.body;
+        const { clientId, productId, quantity, sellAmount, statusOfTransaction, paymentType, pendingAmount, paidAmount } = req.body;
 
         const product = await Product.findById(productId);
         const client = await Client.findById(clientId);
@@ -52,12 +52,20 @@ const createTransaction = async (req, res) => {
 
         product.isStock -= quantity;
 
+        const totalTransactionAmount = sellAmount * quantity;
+
+
         // Update client balance
-        if (statusOfTransaction === "completed") {
-            client.paidAmount += sellAmount * quantity;
+
+        if (paymentType === 'partial') {
+            client.pendingAmount += pendingAmount;
+            client.paidAmount += paidAmount;
+        } else if (statusOfTransaction === "completed") {
+            client.paidAmount += totalTransactionAmount;
         } else {
-            client.pendingAmount += sellAmount * quantity;
+            client.pendingAmount += totalTransactionAmount;
         }
+
 
         const transaction = new Transaction({
             clientId,
@@ -65,6 +73,9 @@ const createTransaction = async (req, res) => {
             quantity,
             sellAmount,
             statusOfTransaction,
+            paymentType,
+            pendingAmount,
+            paidAmount,
         });
 
         await transaction.save();
@@ -81,7 +92,7 @@ const createTransaction = async (req, res) => {
 // ✅ Update transaction
 const updateTransaction = async (req, res) => {
     try {
-        const { clientId, productId, quantity, sellAmount, statusOfTransaction } = req.body;
+        const { clientId, productId, quantity, sellAmount, statusOfTransaction, paymentType, pendingAmount, paidAmount } = req.body;
         const transaction = await Transaction.findById(req.params.id);
 
         if (!transaction) return res.status(404).json({ error: "Transaction not found" });
@@ -96,25 +107,39 @@ const updateTransaction = async (req, res) => {
         // Rollback previous values
         product.isStock += transaction.quantity;
 
-        if (transaction.statusOfTransaction === "completed") {
-            client.paidAmount -= transaction.sellAmount * transaction.quantity;
+        const previousTotalAmount = transaction.sellAmount * transaction.quantity;
+
+
+        if (transaction.paymentType === 'partial') {
+            client.pendingAmount -= transaction.pendingAmount;
+            client.paidAmount -= transaction.paidAmount;
+        } else if (transaction.statusOfTransaction === "completed") {
+            client.paidAmount -= previousTotalAmount;
         } else {
-            client.pendingAmount -= transaction.sellAmount * transaction.quantity;
+            client.pendingAmount -= previousTotalAmount;
         }
 
         // Apply new values
+        const newTotalAmount = sellAmount * quantity;
+
         transaction.clientId = clientId;
         transaction.productId = productId;
         transaction.quantity = quantity;
         transaction.sellAmount = sellAmount;
         transaction.statusOfTransaction = statusOfTransaction;
+        transaction.paymentType = paymentType;
+        transaction.pendingAmount = pendingAmount;
+        transaction.paidAmount = paidAmount;
 
         product.isStock -= quantity;
 
-        if (statusOfTransaction === "completed") {
-            client.paidAmount += sellAmount * quantity;
+        if (paymentType === 'partial') {
+            client.pendingAmount += pendingAmount;
+            client.paidAmount += paidAmount;
+        } else if (statusOfTransaction === "completed") {
+            client.paidAmount += newTotalAmount;
         } else {
-            client.pendingAmount += sellAmount * quantity;
+            client.pendingAmount += newTotalAmount;
         }
 
         await transaction.save();
@@ -146,7 +171,10 @@ const deleteTransaction = async (req, res) => {
         }
 
         if (client) {
-            if (transaction.statusOfTransaction === "completed") {
+            if (transaction.paymentType === 'partial') {
+                client.pendingAmount -= transaction.pendingAmount;
+                client.paidAmount -= transaction.paidAmount;
+            } else if (transaction.statusOfTransaction === "completed") {
                 client.paidAmount -= transaction.sellAmount * transaction.quantity;
             } else {
                 client.pendingAmount -= transaction.sellAmount * transaction.quantity;
