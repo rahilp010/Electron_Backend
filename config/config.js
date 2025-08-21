@@ -12,6 +12,7 @@ const _config = {
     cloudinaryApiKey: process.env.CLOUDINARY_API_KEY,
     cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET,
     apiBase: process.env.ELECTRON_APP_API_BASE,
+    url: process.env.UPDATE_SERVER_URL
 }
 
 export const config = Object.freeze(_config)
