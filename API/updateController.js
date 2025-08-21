@@ -1,6 +1,6 @@
 // api/update.js - Place this in your Vercel backend project
 
-import { config } from "../config/config";
+import { config } from "../config/config.js";
 
 export default function handler(req, res) {
     // Enable CORS for your Electron app
