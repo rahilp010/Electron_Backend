@@ -30,49 +30,29 @@ export default function handler(req, res) {
         console.log(`Update check - Platform: ${platform}, Arch: ${arch}, Current: ${currentVersion}`);
 
         // Your update configuration
-        const latestVersion = '1.1.0';
-        const updateInfo = {
-            version: latestVersion,
-            readme: `What's new in v${latestVersion}:
-• Improved performance and stability
-• Bug fixes and security updates
-• New features and enhancements
-• Better user interface`,
-            pub_date: new Date().toISOString(),
-
-            // Platform-specific download URLs
-            platforms: {
-                win32: {
-                    update: config.url,
-                    name: 'electron-win32-x64.zip',
-                    notes: 'Windows installer'
-                }
-            }
-        };
+        const latestVersion = '1.1.0.1';
 
         // Check if update is needed
-        if (isVersionNewer(currentVersion, latestVersion)) {
-            const platformInfo = updateInfo.platforms[platform] || updateInfo.platforms.win32;
-
-            const response = {
-                version: updateInfo.version,
-                readme: updateInfo.readme,
-                pub_date: updateInfo.pub_date,
-                update: platformInfo.update,
-                name: platformInfo.name,
-                notes: platformInfo.notes,
-                // Additional metadata
-                platform: platform,
-                arch: arch,
-                size: getPlatformFileSize(platform), // Optional: add file sizes
-            };
-
-            console.log(`Update available: ${latestVersion} for ${platform}`);
-            res.status(200).json(response);
-        } else {
+        if (!isVersionNewer(currentVersion, latestVersion)) {
             console.log(`No update needed. Current: ${currentVersion}, Latest: ${latestVersion}`);
-            res.status(204).end(); // No Content - no update available
+            return res.status(204).end(); // No Content - no update available
         }
+
+        // Format response according to electron-simple-updater's expected format
+        const response = {
+            version: latestVersion,
+            readme: `What's new in v${latestVersion}:\n• Improved performance and stability\n• Bug fixes and security updates\n• New features and enhancements\n• Better user interface`,
+            pub_date: new Date().toISOString(),
+            update: 'https://www.dropbox.com/scl/fi/q2ioqg7usaecdxjmk6igu/electron-win32-x64.zip?rlkey=b7aaotkngf2m7l9cmnfzt3zn9&st=gjomyz5a&dl=1',
+            name: 'electron-win32-x64.zip',
+            notes: 'Windows installer',
+            platform: 'win32',
+            arch: 'x64',
+            size: '120.2 MB'
+        };
+
+        console.log(`Update available: ${latestVersion} for ${platform}`);
+        res.status(200).json(response);
 
     } catch (error) {
         console.error('Update API error:', error);
@@ -102,14 +82,4 @@ function isVersionNewer(current, latest) {
         console.error('Version comparison error:', error);
         return false;
     }
-}
-
-// Optional: Helper function to get file sizes (you can implement this)
-function getPlatformFileSize(platform) {
-    const sizes = {
-        win32: '45.2 MB',
-        darwin: '52.1 MB',
-        linux: '48.7 MB'
-    };
-    return sizes[platform] || 'Unknown';
 }
