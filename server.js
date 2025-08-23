@@ -5,7 +5,11 @@ import connectDB from './DB/db.js'
 import productRouter from './API/products/productRouter.js'
 import clientRouter from './API/clients/clientRouter.js'
 import transactionRouter from './API/transaction/transactionRouter.js'
-import handler from './API/updateController.js';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
 
@@ -32,7 +36,7 @@ const app = express();
     app.use('/api/products', productRouter);
     app.use('/api/clients', clientRouter);
     app.use('/api/transaction', transactionRouter);
-    app.use('/api/update', handler)
+    app.use('/updates', express.static(__dirname))
 
     app.get('/api/health', (req, res) => {
         res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });
