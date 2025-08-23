@@ -1,0 +1,7 @@
+{
+   "version": "1.1.0.1",
+   "update": "https://www.dropbox.com/scl/fi/q2ioqg7usaecdxjmk6igu/electron-win32-x64.zip?rlkey=b7aaotkngf2m7l9cmnfzt3zn9&st=gjomyz5a&dl=1",
+   "install": "electron-win32-x64.zip",
+   "pub_date": "2025-08-23T10:54:51.000Z",
+   "notes": "What's new:\n• Bug fixes\n• Performance improvements"
+}
