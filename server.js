@@ -7,7 +7,7 @@ import clientRouter from './API/clients/clientRouter.js'
 import transactionRouter from './API/transaction/transactionRouter.js'
 import path from 'path';
 import { fileURLToPath } from 'url';
-import authRouter from './API/auth/authRouter.js';
+// import authRouter from './API/auth/authRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,7 +38,7 @@ const app = express();
     app.use('/api/products', productRouter);
     app.use('/api/clients', clientRouter);
     app.use('/api/transaction', transactionRouter);
-    app.use('/api/auth', authRouter)
+    // app.use('/api/auth', authRouter)
     app.use('/updates', express.static(__dirname))
 
     app.get('/api/health', (req, res) => {
