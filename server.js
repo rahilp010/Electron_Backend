@@ -7,7 +7,7 @@ import clientRouter from './API/clients/clientRouter.js'
 import transactionRouter from './API/transaction/transactionRouter.js'
 import path from 'path';
 import { fileURLToPath } from 'url';
-import authRouter from './API/Auth/AuthRouter.js';
+import authRouter from './API/auth/authRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
