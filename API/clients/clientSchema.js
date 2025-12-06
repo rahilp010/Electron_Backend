@@ -2,12 +2,18 @@ import mongoose from "mongoose";
 
 const clientSchema = new mongoose.Schema(
     {
-        // _id: { type: mongoose.Schema.Types.ObjectId, ref: "Client", required: true },
         clientName: { type: String, required: true },
-        phoneNo: { type: Number, required: true },
+        phoneNo: { type: Number },
+        gstNo: { type: String },
+        address: { type: String },
         pendingAmount: { type: Number, default: 0 },
         paidAmount: { type: Number, default: 0 },
         pendingFromOurs: { type: Number, default: 0 },
+        accountType: { type: String, default: 'Debtors' },
+        pageName: { type: String, default: 'Client' },
+        isEmployee: { type: Number, default: 0 },
+        salary: { type: Number, default: 0 },
+        salaryHistory: { type: Array, default: [] },
     },
     { timestamps: true }
 );

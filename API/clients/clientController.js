@@ -36,13 +36,20 @@ const getClientById = async (req, res) => {
 // ✅ Create new client
 const createClient = async (req, res) => {
     try {
-        const { clientName, phoneNo, pendingAmount, paidAmount, pendingFromOurs } = req.body;
+        const { clientName, phoneNo, gstNo, address, pendingAmount, paidAmount, pendingFromOurs, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
         const newClient = new Client({
             clientName,
             phoneNo,
+            gstNo,
+            address,
             pendingAmount,
             paidAmount,
             pendingFromOurs,
+            accountType,
+            pageName,
+            isEmployee,
+            salary,
+            salaryHistory,
         });
 
         await newClient.save();
@@ -59,15 +66,22 @@ const createClient = async (req, res) => {
 const updateClient = async (req, res) => {
     try {
         const { id } = req.params;
-        const { clientName, phoneNo, pendingAmount, paidAmount, pendingFromOurs } = req.body;
+        const { clientName, phoneNo, gstNo, address, pendingAmount, paidAmount, pendingFromOurs, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
         const updatedClient = await Client.findByIdAndUpdate(
             id,
             {
                 clientName,
                 phoneNo,
+                gstNo,
+                address,
                 pendingAmount,
                 paidAmount,
                 pendingFromOurs,
+                accountType,
+                pageName,
+                isEmployee,
+                salary,
+                salaryHistory,
             },
             { new: true, runValidators: true }
         );
