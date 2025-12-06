@@ -32,50 +32,17 @@ const getProductById = async (req, res) => {
 
 const createProduct = async (req, res) => {
     try {
-        const {
-            productName,
-            productPrice,
-            productQuantity,
-            clientName,
-            assetType,
-            saleHSN,
-            purchaseHSN,
-            taxRate,
-            taxAmount,
-            totalAmountWithTax,
-            totalAmountWithoutTax,
-            addParts
-        } = req.body;
-
-        const newProduct = new Product({
-            name: productName,        // ✅ FIXED
-            price: productPrice,      // ✅ FIXED
-            qty: productQuantity,     // ✅ FIXED
-            clientName,
-            assetType,
-            saleHSN,
-            purchaseHSN,
-            taxRate,
-            taxAmount,
-            totalAmountWithTax,
-            totalAmountWithoutTax,
-            addParts
-        });
-
+        const { productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts } = req.body;
+        const newProduct = new Product({ productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts });
         await newProduct.save();
 
-        res.status(201).json({
-            message: "Product inserted successfully",
-            product: newProduct,
-        });
-
+        res.status(201).json({ message: "Product inserted successfully", product: newProduct });
         console.log("✅ Product inserted successfully");
     } catch (error) {
         console.error("❌ Error inserting product:", error);
-        res.status(500).json({ error: error.message });
+        res.status(500).json({ error: "Failed to add product" });
     }
-};
-
+}
 
 const updateProduct = async (req, res) => {
     try {
