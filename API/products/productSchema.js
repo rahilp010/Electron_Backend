@@ -2,11 +2,19 @@ import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
     {
-        // _id: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
-        name: { type: String, required: true },
-        price: { type: Number, required: true },
-        isStock: { type: Number, default: 0 },
-        image: { type: String },
+        _id: { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+        productName: { type: String, required: true },
+        productPrice: { type: Number, required: true },
+        productQuantity: { type: Number, default: 0 },
+        clientName: { type: String },
+        assetType: { type: String },
+        saleHSN: { type: String },
+        purchaseHSN: { type: String },
+        taxRate: { type: Number },
+        taxAmount: { type: Number },
+        totalAmountWithTax: { type: Number },
+        totalAmountWithoutTax: { type: Number },
+        addParts: { type: Array },
     },
     { timestamps: true }
 );
