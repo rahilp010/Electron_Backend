@@ -1,5 +1,5 @@
 import express from 'express'
-import { createPurchase, deletePurchase, getAllPurchases, getPurchaseById, updatePurchase } from './purchaseSchema.js'
+import { createPurchase, deletePurchase, getAllPurchases, getPurchaseById, updatePurchase } from './purchaseController.js'
 
 const purchaseRouter = express.Router()
 
