@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import Purchase from "./purchaseSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
@@ -13,6 +12,7 @@ export const getAllPurchases = async (req, res) => {
 
     res.status(200).json(purchases);
   } catch (error) {
+    console.error("❌ Error fetching purchases:", error);
     res.status(500).json({ error: "Failed to fetch purchases" });
   }
 };
@@ -24,19 +24,18 @@ export const getPurchaseById = async (req, res) => {
       .populate("clientId")
       .populate("productId");
 
-    if (!purchase) return res.status(404).json({ error: "Purchase not found" });
+    if (!purchase)
+      return res.status(404).json({ error: "Purchase not found" });
 
     res.status(200).json(purchase);
-  } catch {
+  } catch (error) {
+    console.error("❌ Error fetching purchase:", error);
     res.status(500).json({ error: "Failed to fetch purchase" });
   }
 };
 
 /* ========================= CREATE ========================= */
 export const createPurchase = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const {
       clientId,
@@ -61,29 +60,34 @@ export const createPurchase = async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const product = await Product.findById(productId).session(session);
-    const client = await Client.findById(clientId).session(session);
+    const product = await Product.findById(productId);
+    const client = await Client.findById(clientId);
 
-    if (!product || !client)
+    if (!product || !client) {
       return res.status(404).json({ error: "Client or Product not found" });
+    }
 
-    if (product.isStock < quantity)
+    if (product.isStock < quantity) {
       return res.status(400).json({ error: "Insufficient stock" });
+    }
 
-    /* ✅ Stock Update */
+    /* ✅ STOCK UPDATE */
     product.isStock -= quantity;
+    await product.save();
 
     const totalAmount = sellAmount * quantity;
 
-    /* ✅ Client Balance Update */
+    /* ✅ CLIENT BALANCE UPDATE */
     if (paymentType === "partial") {
-      client.pendingAmount += pendingAmount;
-      client.paidAmount += paidAmount;
+      client.pendingAmount += Number(pendingAmount);
+      client.paidAmount += Number(paidAmount);
     } else if (statusOfTransaction === "completed") {
       client.paidAmount += totalAmount;
     } else {
       client.pendingAmount += totalAmount;
     }
+
+    await client.save();
 
     const purchase = new Purchase({
       clientId,
@@ -104,26 +108,17 @@ export const createPurchase = async (req, res) => {
       date,
     });
 
-    await purchase.save({ session });
-    await product.save({ session });
-    await client.save({ session });
-
-    await session.commitTransaction();
-    session.endSession();
+    await purchase.save();
 
     res.status(201).json(purchase);
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    console.error("❌ Error creating purchase:", error);
     res.status(500).json({ error: "Failed to create purchase" });
   }
 };
 
 /* ========================= UPDATE ========================= */
 export const updatePurchase = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const {
       clientId,
@@ -136,17 +131,18 @@ export const updatePurchase = async (req, res) => {
       paidAmount = 0,
     } = req.body;
 
-    const purchase = await Purchase.findById(req.params.id).session(session);
+    const purchase = await Purchase.findById(req.params.id);
     if (!purchase)
       return res.status(404).json({ error: "Purchase not found" });
 
-    const client = await Client.findById(clientId).session(session);
-    const product = await Product.findById(productId).session(session);
+    const client = await Client.findById(clientId);
+    const product = await Product.findById(productId);
 
-    if (!client || !product)
+    if (!client || !product) {
       return res.status(404).json({ error: "Client or Product not found" });
+    }
 
-    /* ✅ Rollback OLD stock */
+    /* ✅ ROLLBACK OLD STOCK */
     product.isStock += purchase.quantity;
 
     const oldTotal = purchase.sellAmount * purchase.quantity;
@@ -160,17 +156,21 @@ export const updatePurchase = async (req, res) => {
       client.pendingAmount -= oldTotal;
     }
 
-    if (product.isStock < quantity)
-      return res.status(400).json({ error: "Insufficient stock after update" });
+    /* ✅ CHECK NEW STOCK */
+    if (product.isStock < quantity) {
+      return res
+        .status(400)
+        .json({ error: "Insufficient stock after update" });
+    }
 
-    /* ✅ Apply NEW */
+    /* ✅ APPLY NEW VALUES */
     const newTotal = sellAmount * quantity;
 
     product.isStock -= quantity;
 
     if (paymentType === "partial") {
-      client.pendingAmount += pendingAmount;
-      client.paidAmount += paidAmount;
+      client.pendingAmount += Number(pendingAmount);
+      client.paidAmount += Number(paidAmount);
     } else if (statusOfTransaction === "completed") {
       client.paidAmount += newTotal;
     } else {
@@ -188,38 +188,32 @@ export const updatePurchase = async (req, res) => {
       paidAmount,
     });
 
-    await purchase.save({ session });
-    await product.save({ session });
-    await client.save({ session });
-
-    await session.commitTransaction();
-    session.endSession();
+    await product.save();
+    await client.save();
+    await purchase.save();
 
     res.status(200).json(purchase);
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    console.error("❌ Error updating purchase:", error);
     res.status(500).json({ error: "Failed to update purchase" });
   }
 };
 
 /* ========================= DELETE ========================= */
 export const deletePurchase = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
-    const purchase = await Purchase.findById(req.params.id).session(session);
+    const purchase = await Purchase.findById(req.params.id);
 
-    if (!purchase)
+    if (!purchase) {
       return res.status(404).json({ error: "Purchase not found" });
+    }
 
-    const client = await Client.findById(purchase.clientId).session(session);
-    const product = await Product.findById(purchase.productId).session(session);
+    const client = await Client.findById(purchase.clientId);
+    const product = await Product.findById(purchase.productId);
 
     if (product) {
       product.isStock += purchase.quantity;
-      await product.save({ session });
+      await product.save();
     }
 
     if (client) {
@@ -234,18 +228,14 @@ export const deletePurchase = async (req, res) => {
         client.pendingAmount -= amount;
       }
 
-      await client.save({ session });
+      await client.save();
     }
 
-    await Purchase.findByIdAndDelete(req.params.id).session(session);
-
-    await session.commitTransaction();
-    session.endSession();
+    await Purchase.findByIdAndDelete(req.params.id);
 
     res.status(200).json({ message: "Purchase deleted successfully" });
   } catch (error) {
-    await session.abortTransaction();
-    session.endSession();
+    console.error("❌ Error deleting purchase:", error);
     res.status(500).json({ error: "Failed to delete purchase" });
   }
 };
