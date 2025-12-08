@@ -27,7 +27,7 @@ const purchaseSchema = new mongoose.Schema(
         pendingAmount: { type: Number, default: 0, min: 0 },
         paidAmount: { type: Number, default: 0, min: 0 },
         pendingFromOurs: { type: Number, default: 0, min: 0 },
-        taxRate: { type: Array },
+        taxRate: { type: Number, default: 0 },
         taxAmount: { type: Number },
         freightCharges: { type: Number },
         freightTaxAmount: { type: Number },
@@ -36,7 +36,8 @@ const purchaseSchema = new mongoose.Schema(
         billNo: { type: String },
         methodType: {
             type: String,
-            enum: ['Receipt', 'Payment', 'Salary']
+            enum: ['Receipt', 'Payment', 'Salary'],
+            default: 'Payment'
         },
         dueDate: { type: Date },
         description: { type: String },

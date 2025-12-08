@@ -46,6 +46,7 @@ export const createPurchase = async (req, res) => {
       paymentType,
       pendingAmount = 0,
       paidAmount = 0,
+      pendingFromOurs = 0,
       taxRate = 0,
       taxAmount = 0,
       freightCharges = 0,
@@ -53,8 +54,14 @@ export const createPurchase = async (req, res) => {
       totalAmountWithTax,
       totalAmountWithoutTax,
       paymentMethod,
+      methodType,
+      billNo,
+      dueDate,
+      description,
       date,
     } = req.body;
+
+    console.log("✅ Incoming payload:", req.body);
 
     if (!clientId || !productId || !quantity || !purchaseAmount) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -98,14 +105,20 @@ export const createPurchase = async (req, res) => {
       paymentType,
       pendingAmount,
       paidAmount,
-      taxRate,
+      pendingFromOurs,
+      taxRate,                // ✅ NOW NUMBER
       taxAmount,
       freightCharges,
       freightTaxAmount,
       totalAmountWithTax,
       totalAmountWithoutTax,
       paymentMethod,
+      methodType,             // ✅ ADDED
+      billNo,
+      dueDate,
+      description,
       date,
+      pageName: "Purchase",
     });
 
     await purchase.save();
@@ -116,6 +129,7 @@ export const createPurchase = async (req, res) => {
     res.status(500).json({ error: "Failed to create purchase" });
   }
 };
+
 
 /* ========================= UPDATE ========================= */
 export const updatePurchase = async (req, res) => {
