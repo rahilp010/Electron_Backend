@@ -41,7 +41,7 @@ export const createPurchase = async (req, res) => {
       clientId,
       productId,
       quantity,
-      sellAmount,
+      purchaseAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount = 0,
@@ -56,7 +56,7 @@ export const createPurchase = async (req, res) => {
       date,
     } = req.body;
 
-    if (!clientId || !productId || !quantity || !sellAmount) {
+    if (!clientId || !productId || !quantity || !purchaseAmount) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
@@ -75,7 +75,7 @@ export const createPurchase = async (req, res) => {
     product.isStock -= quantity;
     await product.save();
 
-    const totalAmount = sellAmount * quantity;
+    const totalAmount = purchaseAmount * quantity;
 
     /* ✅ CLIENT BALANCE UPDATE */
     if (paymentType === "partial") {
@@ -93,7 +93,7 @@ export const createPurchase = async (req, res) => {
       clientId,
       productId,
       quantity,
-      sellAmount,
+      purchaseAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount,
@@ -124,7 +124,7 @@ export const updatePurchase = async (req, res) => {
       clientId,
       productId,
       quantity,
-      sellAmount,
+      purchaseAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount = 0,
@@ -145,7 +145,7 @@ export const updatePurchase = async (req, res) => {
     /* ✅ ROLLBACK OLD STOCK */
     product.isStock += purchase.quantity;
 
-    const oldTotal = purchase.sellAmount * purchase.quantity;
+    const oldTotal = purchase.purchaseAmount * purchase.quantity;
 
     if (purchase.paymentType === "partial") {
       client.pendingAmount -= purchase.pendingAmount;
@@ -164,7 +164,7 @@ export const updatePurchase = async (req, res) => {
     }
 
     /* ✅ APPLY NEW VALUES */
-    const newTotal = sellAmount * quantity;
+    const newTotal = purchaseAmount * quantity;
 
     product.isStock -= quantity;
 
@@ -181,7 +181,7 @@ export const updatePurchase = async (req, res) => {
       clientId,
       productId,
       quantity,
-      sellAmount,
+      purchaseAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount,
@@ -217,7 +217,7 @@ export const deletePurchase = async (req, res) => {
     }
 
     if (client) {
-      const amount = purchase.sellAmount * purchase.quantity;
+      const amount = purchase.purchaseAmount * purchase.quantity;
 
       if (purchase.paymentType === "partial") {
         client.pendingAmount -= purchase.pendingAmount;
