@@ -61,8 +61,6 @@ export const createPurchase = async (req, res) => {
       date,
     } = req.body;
 
-    console.log("✅ Incoming payload:", req.body);
-
     if (!clientId || !productId || !quantity || !purchaseAmount) {
       return res.status(400).json({ error: "Missing required fields" });
     }
@@ -141,8 +139,18 @@ export const updatePurchase = async (req, res) => {
       purchaseAmount,
       statusOfTransaction,
       paymentType,
-      pendingAmount = 0,
-      paidAmount = 0,
+      pendingAmount,
+      paidAmount,
+      taxRate,
+      taxAmount,
+      freightCharges,
+      freightTaxAmount,
+      totalAmountWithoutTax,
+      totalAmountWithTax,
+      billNo,
+      date,
+      dueDate,
+      description,
     } = req.body;
 
     const purchase = await Purchase.findById(req.params.id);
@@ -200,6 +208,16 @@ export const updatePurchase = async (req, res) => {
       paymentType,
       pendingAmount,
       paidAmount,
+      taxRate,
+      taxAmount,
+      freightCharges,
+      freightTaxAmount,
+      totalAmountWithoutTax,
+      totalAmountWithTax,
+      billNo,
+      date,
+      dueDate,
+      description,
     });
 
     await product.save();
