@@ -121,7 +121,12 @@ export const createPurchase = async (req, res) => {
 
     await purchase.save();
 
-    res.status(201).json(purchase);
+    const fullPurchase = await Purchase.findById(purchase._id)
+      .populate("clientId")
+      .populate("productId");
+
+    res.status(201).json(fullPurchase);
+
   } catch (error) {
     console.error("❌ Error creating purchase:", error);
     res.status(500).json({ error: "Failed to create purchase" });
@@ -224,7 +229,12 @@ export const updatePurchase = async (req, res) => {
     await client.save();
     await purchase.save();
 
-    res.status(200).json(purchase);
+    const fullPurchase = await Purchase.findById(purchase._id)
+      .populate("clientId")
+      .populate("productId");
+
+    res.status(200).json(fullPurchase);
+
   } catch (error) {
     console.error("❌ Error updating purchase:", error);
     res.status(500).json({ error: "Failed to update purchase" });
@@ -265,7 +275,7 @@ export const deletePurchase = async (req, res) => {
 
     await Purchase.findByIdAndDelete(req.params.id);
 
-    res.status(200).json({ message: "Purchase deleted successfully" });
+    res.status(200).json({ message: "Purchase deleted successfully", id: req.params.id });
   } catch (error) {
     console.error("❌ Error deleting purchase:", error);
     res.status(500).json({ error: "Failed to delete purchase" });
