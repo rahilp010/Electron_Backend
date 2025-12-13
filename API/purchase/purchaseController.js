@@ -88,6 +88,7 @@ export const createPurchase = async (req, res) => {
       client.paidAmount += Number(paidAmount);
     } else if (statusOfTransaction === "completed") {
       client.paidAmount += totalAmount;
+      purchase.paidAmount += totalAmount;
     } else {
       client.pendingAmount += totalAmount;
     }
@@ -104,14 +105,14 @@ export const createPurchase = async (req, res) => {
       pendingAmount,
       paidAmount,
       pendingFromOurs,
-      taxRate,                // ✅ NOW NUMBER
+      taxRate,
       taxAmount,
       freightCharges,
       freightTaxAmount,
       totalAmountWithTax,
       totalAmountWithoutTax,
       paymentMethod,
-      methodType,             // ✅ ADDED
+      methodType,
       billNo,
       dueDate,
       description,
