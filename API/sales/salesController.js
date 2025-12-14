@@ -1,47 +1,47 @@
-import Purchase from "./purchaseSchema.js";
+import Sales from "./salesSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
 
 /* ========================= GET ALL ========================= */
-export const getAllPurchases = async (req, res) => {
+export const getAllSales = async (req, res) => {
   try {
-    const purchases = await Purchase.find()
+    const sales = await Sales.find()
       .populate("clientId")
       .populate("productId")
       .sort({ createdAt: -1 });
 
-    res.status(200).json(purchases);
+    res.status(200).json(sales);
   } catch (error) {
-    console.error("❌ Error fetching purchases:", error);
-    res.status(500).json({ error: "Failed to fetch purchases" });
+    console.error("❌ Error fetching sales:", error);
+    res.status(500).json({ error: "Failed to fetch sales" });
   }
 };
 
 /* ========================= GET BY ID ========================= */
-export const getPurchaseById = async (req, res) => {
+export const getSalesById = async (req, res) => {
   try {
-    const purchase = await Purchase.findById(req.params.id)
+    const sale = await Sales.findById(req.params.id)
       .populate("clientId")
       .populate("productId");
 
-    if (!purchase)
-      return res.status(404).json({ error: "Purchase not found" });
+    if (!sale)
+      return res.status(404).json({ error: "Sales not found" });
 
-    res.status(200).json(purchase);
+    res.status(200).json(sale);
   } catch (error) {
-    console.error("❌ Error fetching purchase:", error);
-    res.status(500).json({ error: "Failed to fetch purchase" });
+    console.error("❌ Error fetching sale:", error);
+    res.status(500).json({ error: "Failed to fetch sale" });
   }
 };
 
 /* ========================= CREATE ========================= */
-export const createPurchase = async (req, res) => {
+export const createSales = async (req, res) => {
   try {
     const {
       clientId,
       productId,
       quantity,
-      purchaseAmount,
+      saleAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount = 0,
@@ -61,7 +61,7 @@ export const createPurchase = async (req, res) => {
       date,
     } = req.body;
 
-    if (!clientId || !productId || !quantity || !purchaseAmount) {
+    if (!clientId || !productId || !quantity || !saleAmount) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
@@ -80,7 +80,7 @@ export const createPurchase = async (req, res) => {
     product.isStock -= quantity;
     await product.save();
 
-    const totalAmount = purchaseAmount * quantity;
+    const totalAmount = saleAmount * quantity;
 
     /* ✅ CLIENT BALANCE UPDATE */
     if (paymentType === "partial") {
@@ -94,11 +94,11 @@ export const createPurchase = async (req, res) => {
 
     await client.save();
 
-    const purchase = new Purchase({
+    const sale = new Sales({
       clientId,
       productId,
       quantity,
-      purchaseAmount,
+      saleAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount,
@@ -116,32 +116,32 @@ export const createPurchase = async (req, res) => {
       dueDate,
       description,
       date,
-      pageName: "Purchase",
+      pageName: "Sales",
     });
 
-    await purchase.save();
+    await sale.save();
 
-    const fullPurchase = await Purchase.findById(purchase._id)
+    const fullSales = await Sales.findById(sale._id)
       .populate("clientId")
       .populate("productId");
 
-    res.status(201).json(fullPurchase);
+    res.status(201).json(fullSales);
 
   } catch (error) {
-    console.error("❌ Error creating purchase:", error);
-    res.status(500).json({ error: "Failed to create purchase" });
+    console.error("❌ Error creating sale:", error);
+    res.status(500).json({ error: "Failed to create sale" });
   }
 };
 
 
 /* ========================= UPDATE ========================= */
-export const updatePurchase = async (req, res) => {
+export const updateSales = async (req, res) => {
   try {
     const {
       clientId,
       productId,
       quantity,
-      purchaseAmount,
+      saleAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount,
@@ -158,9 +158,9 @@ export const updatePurchase = async (req, res) => {
       description,
     } = req.body;
 
-    const purchase = await Purchase.findById(req.params.id);
-    if (!purchase)
-      return res.status(404).json({ error: "Purchase not found" });
+    const sale = await Sales.findById(req.params.id);
+    if (!sale)
+      return res.status(404).json({ error: "Sales not found" });
 
     const client = await Client.findById(clientId);
     const product = await Product.findById(productId);
@@ -170,14 +170,14 @@ export const updatePurchase = async (req, res) => {
     }
 
     /* ✅ ROLLBACK OLD STOCK */
-    product.isStock += purchase.quantity;
+    product.isStock += sale.quantity;
 
-    const oldTotal = purchase.purchaseAmount * purchase.quantity;
+    const oldTotal = sale.saleAmount * sale.quantity;
 
-    if (purchase.paymentType === "partial") {
-      client.pendingAmount -= purchase.pendingAmount;
-      client.paidAmount -= purchase.paidAmount;
-    } else if (purchase.statusOfTransaction === "completed") {
+    if (sale.paymentType === "partial") {
+      client.pendingAmount -= sale.pendingAmount;
+      client.paidAmount -= sale.paidAmount;
+    } else if (sale.statusOfTransaction === "completed") {
       client.paidAmount -= oldTotal;
     } else {
       client.pendingAmount -= oldTotal;
@@ -191,7 +191,7 @@ export const updatePurchase = async (req, res) => {
     }
 
     /* ✅ APPLY NEW VALUES */
-    const newTotal = purchaseAmount * quantity;
+    const newTotal = saleAmount * quantity;
 
     product.isStock -= quantity;
 
@@ -204,11 +204,11 @@ export const updatePurchase = async (req, res) => {
       client.pendingAmount += newTotal;
     }
 
-    Object.assign(purchase, {
+    Object.assign(sale, {
       clientId,
       productId,
       quantity,
-      purchaseAmount,
+      saleAmount,
       statusOfTransaction,
       paymentType,
       pendingAmount,
@@ -227,44 +227,44 @@ export const updatePurchase = async (req, res) => {
 
     await product.save();
     await client.save();
-    await purchase.save();
+    await sale.save();
 
-    const fullPurchase = await Purchase.findById(purchase._id)
+    const fullSales = await Sales.findById(sale._id)
       .populate("clientId")
       .populate("productId");
 
-    res.status(200).json(fullPurchase);
+    res.status(200).json(fullSales);
 
   } catch (error) {
-    console.error("❌ Error updating purchase:", error);
-    res.status(500).json({ error: "Failed to update purchase" });
+    console.error("❌ Error updating sale:", error);
+    res.status(500).json({ error: "Failed to update sale" });
   }
 };
 
 /* ========================= DELETE ========================= */
-export const deletePurchase = async (req, res) => {
+export const deleteSales = async (req, res) => {
   try {
-    const purchase = await Purchase.findById(req.params.id);
+    const sale = await Sales.findById(req.params.id);
 
-    if (!purchase) {
-      return res.status(404).json({ error: "Purchase not found" });
+    if (!sale) {
+      return res.status(404).json({ error: "Sales not found" });
     }
 
-    const client = await Client.findById(purchase.clientId);
-    const product = await Product.findById(purchase.productId);
+    const client = await Client.findById(sale.clientId);
+    const product = await Product.findById(sale.productId);
 
     if (product) {
-      product.isStock += purchase.quantity;
+      product.isStock += sale.quantity;
       await product.save();
     }
 
     if (client) {
-      const amount = purchase.purchaseAmount * purchase.quantity;
+      const amount = sale.saleAmount * sale.quantity;
 
-      if (purchase.paymentType === "partial") {
-        client.pendingAmount -= purchase.pendingAmount;
-        client.paidAmount -= purchase.paidAmount;
-      } else if (purchase.statusOfTransaction === "completed") {
+      if (sale.paymentType === "partial") {
+        client.pendingAmount -= sale.pendingAmount;
+        client.paidAmount -= sale.paidAmount;
+      } else if (sale.statusOfTransaction === "completed") {
         client.paidAmount -= amount;
       } else {
         client.pendingAmount -= amount;
@@ -273,11 +273,11 @@ export const deletePurchase = async (req, res) => {
       await client.save();
     }
 
-    await Purchase.findByIdAndDelete(req.params.id);
+    await Sales.findByIdAndDelete(req.params.id);
 
-    res.status(200).json({ message: "Purchase deleted successfully", id: req.params.id });
+    res.status(200).json({ message: "Sales deleted successfully", id: req.params.id });
   } catch (error) {
-    console.error("❌ Error deleting purchase:", error);
-    res.status(500).json({ error: "Failed to delete purchase" });
+    console.error("❌ Error deleting sale:", error);
+    res.status(500).json({ error: "Failed to delete sale" });
   }
 };
