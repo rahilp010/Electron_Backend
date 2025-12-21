@@ -53,6 +53,7 @@ const createClient = async (req, res) => {
 
         const account = await Account.create({
             clientId: client._id,
+            accountName: client.clientName,
             openingBalance,
             currentBalance: openingBalance,
             accountType,

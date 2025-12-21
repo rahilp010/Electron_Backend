@@ -4,13 +4,12 @@ const accountSchema = new mongoose.Schema(
     {
         clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client" },
         accountName: { type: String, required: true },
-        accountType: { type: Number, required: true },
+        accountType: { type: String, enum: ['Creditor', 'Debtor'], required: true },
         openingBalance: { type: Number, default: 0 },
-        currentBalance: { type: String, index: true },
+        currentBalance: { type: Number, default: 0 },
         bankName: { type: String, index: true },
         accountNumber: { type: String },
-        isActive: { type: Boolean },
-        ladgerHistory: { type: Array }
+        isActive: { type: Boolean, default: true, },
     },
     { timestamps: true }
 )
