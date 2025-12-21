@@ -1,4 +1,4 @@
-import Counter from "./counterSchema";
+import Counter from "./counterSchema.js";
 
 const generateAccountNumber = async () => {
     const counter = await Counter.findOneAndUpdate(
