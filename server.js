@@ -10,6 +10,7 @@ import versionController from './API/version/versionController.js';
 import purchaseRouter from './API/purchase/purchaseRouter.js';
 import salesRouter from './API/sales/salesRouter.js';
 import accountRouter from './API/bankAccounts/accounts/accountRouter.js';
+import ledgerRouter from './API/bankAccounts/ladger/ladgerRouter.js';
 // import authRouter from './API/auth/authRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -43,6 +44,7 @@ const app = express();
     app.use('/api/purchase', purchaseRouter);
     app.use('/api/sales', salesRouter);
     app.use('/api/account', accountRouter);
+    app.use('/api/ledger', ledgerRouter);
     app.use('/api/version', versionController)
     // app.use('/api/auth', authRouter)
     app.use('/updates', express.static(__dirname))
