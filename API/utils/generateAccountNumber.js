@@ -7,7 +7,7 @@ const generateAccountNumber = async () => {
         { new: true, upsert: true }
     );
 
-    return `AC${counter.seq}`;
+    return `ACO${counter.seq}`;
     // Example: AC100001
 };
 
