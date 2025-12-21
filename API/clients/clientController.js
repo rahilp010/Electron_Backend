@@ -94,9 +94,13 @@ const updateClient = async (req, res) => {
         const { clientName, phoneNo, gstNo, address, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
 
         const client = await Client.findById(id);
-        const account = await Account.findById(id);
         if (!client) {
             return res.status(404).json({ error: 'Client not found' });
+        }
+
+        const account = await Account.findById(client.accountId);
+        if (!account) {
+            return res.status(404).json({ error: 'Linked account not found' });
         }
 
         client.clientName = clientName;
@@ -106,9 +110,14 @@ const updateClient = async (req, res) => {
         client.accountType = accountType;
         client.isEmployee = isEmployee;
         client.salary = salary;
-        account.accountName = clientName
 
-        await client.save();
+        account.accountName = clientName;
+        account.accountType = accountType;
+
+        await Promise.all([
+            client.save(),
+            account.save(),
+        ]);
 
         res.status(200).json({ message: "Client updated successfully", client });
     } catch (error) {
