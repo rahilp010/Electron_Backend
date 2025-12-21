@@ -1,72 +1,120 @@
-// import mongoose from "mongoose";
-// import Account from "./ladgerSchema.js";
+import mongoose from 'mongoose';
+import Ledger from './ladgerSchema.js';
+import Account from '../accounts/accountSchema.js';
 
-// const getAllAccounts = async (req, res) => {
-//     try {
-//         const accounts = await Account.find().sort({ createdAt: -1 });
-//         res.status(200).json(accounts);
-//     } catch (error) {
-//         console.error("❌ Error fetching accounts:", error);
-//         res.status(500).json({ error: "Failed to fetch accounts" });
-//     }
-// }
+/* ================= GET LEDGER BY ACCOUNT ================= */
+const getLedgerByAccount = async (req, res) => {
+  try {
+    const { accountId } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(accountId)) {
+      return res.status(400).json({ error: 'Invalid account ID' });
+    }
 
-// const createAccount = async (req, res) => {
-//     try {
-//         const { accountName, accountType, openingBalance, currentBalance, bankName, accountNumber, isActive, ladgerHistory } = req.body;
+    const ledger = await Ledger.find({ accountId })
+      .sort({ date: 1, createdAt: 1 });
 
-//         const newAccount = new Account({ accountName, accountType, openingBalance, currentBalance, bankName, accountNumber, isActive, ladgerHistory });
-//         await newAccount.save();
+    res.status(200).json(ledger);
+  } catch (error) {
+    console.error('❌ Error fetching ledger:', error);
+    res.status(500).json({ error: 'Failed to fetch ledger' });
+  }
+};
 
-//         res.status(201).json({ message: "Product inserted successfully", account: newAccount });
-//         console.log("✅ Product inserted successfully");
-//     } catch (error) {
-//         console.error("❌ Error inserting product:", error);
-//         res.status(500).json({ error: "Failed to add product" });
-//     }
-// }
+/* ================= ADD LEDGER ENTRY ================= */
+const addLedgerEntry = async (req, res) => {
+  try {
+    const {
+      accountId,
+      clientId,
+      entryType, // debit | credit
+      amount,
+      referenceType,
+      referenceId,
+      narration,
+    } = req.body;
 
-// const updateProduct = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const { productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts } = req.body;
+    if (!['debit', 'credit'].includes(entryType)) {
+      return res.status(400).json({ error: 'Invalid entry type' });
+    }
 
-//         const updatedProduct = await Product.findByIdAndUpdate(
-//             id,
-//             { productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts },
-//             { new: true } // return updated doc
-//         );
+    const account = await Account.findById(accountId);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
 
-//         if (!updatedProduct) {
-//             return res.status(404).json({ error: "Product not found" });
-//         }
+    /* 🔢 CALCULATE BALANCE */
+    const newBalance =
+      entryType === 'debit'
+        ? account.currentBalance + amount
+        : account.currentBalance - amount;
 
-//         res.status(200).json({ message: "Product updated successfully", product: updatedProduct });
-//     } catch (error) {
-//         console.error("❌ Error updating product:", error);
-//         res.status(500).json({ error: "Failed to update product" });
-//     }
-// };
+    /* 🧾 CREATE LEDGER ENTRY */
+    const ledger = await Ledger.create({
+      accountId,
+      clientId,
+      entryType,
+      amount,
+      balanceAfter: newBalance,
+      referenceType,
+      referenceId,
+      narration,
+    });
 
+    /* 🔄 UPDATE ACCOUNT BALANCE */
+    account.currentBalance = newBalance;
+    await account.save();
 
-// const deleteProduct = async (req, res) => {
-//     try {
-//         const { id } = req.params;
+    res.status(201).json({
+      message: 'Ledger entry added successfully',
+      ledger,
+    });
+  } catch (error) {
+    console.error('❌ Error adding ledger entry:', error);
+    res.status(500).json({ error: 'Failed to add ledger entry' });
+  }
+};
 
-//         const deletedProduct = await Product.findByIdAndDelete(id);
+/* ================= DELETE LEDGER ENTRY (SAFE) ================= */
+const deleteLedgerEntry = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-//         if (!deletedProduct) {
-//             return res.status(404).json({ error: "Product not found" });
-//         }
+    const entry = await Ledger.findById(id);
+    if (!entry) {
+      return res.status(404).json({ error: 'Ledger entry not found' });
+    }
 
-//         res.status(200).json({ message: "Product deleted successfully" });
-//         console.log("🗑️ Product deleted successfully");
-//     } catch (error) {
-//         console.error("❌ Error deleting product:", error);
-//         res.status(500).json({ error: "Failed to delete product" });
-//     }
-// };
+    const account = await Account.findById(entry.accountId);
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
 
+    /* 🚫 DO NOT ALLOW DELETING OPENING ENTRY */
+    if (entry.referenceType === 'Opening') {
+      return res.status(400).json({
+        error: 'Opening balance entry cannot be deleted',
+      });
+    }
 
-// export { createProduct, getAllProducts, getProductById, updateProduct, deleteProduct };
+    /* 🔁 REVERSE BALANCE */
+    account.currentBalance =
+      entry.entryType === 'debit'
+        ? account.currentBalance - entry.amount
+        : account.currentBalance + entry.amount;
+
+    await account.save();
+    await Ledger.findByIdAndDelete(id);
+
+    res.status(200).json({ message: 'Ledger entry deleted successfully' });
+  } catch (error) {
+    console.error('❌ Error deleting ledger entry:', error);
+    res.status(500).json({ error: 'Failed to delete ledger entry' });
+  }
+};
+
+export {
+  getLedgerByAccount,
+  addLedgerEntry,
+  deleteLedgerEntry,
+};

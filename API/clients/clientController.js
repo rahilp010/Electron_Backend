@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Client from "./clientSchema.js";
 import Account from "../bankAccounts/accounts/accountSchema.js";
-import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
+// import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 
 // ✅ Get all clients
 const getAllClients = async (req, res, next) => {
@@ -60,15 +60,15 @@ const createClient = async (req, res) => {
             isActive: true
         })
 
-        await Ledger.create({
-            accountId: account._id,
-            clientId: client._id,
-            entryType: openingBalance >= 0 ? 'debit' : 'credit',
-            amount: Math.abs(openingBalance),
-            balanceAfter: openingBalance,
-            referenceType: 'Opening',
-            narration: 'Opening Balance',
-        });
+        // await Ledger.create({
+        //     accountId: account._id,
+        //     clientId: client._id,
+        //     entryType: openingBalance >= 0 ? 'debit' : 'credit',
+        //     amount: Math.abs(openingBalance),
+        //     balanceAfter: openingBalance,
+        //     referenceType: 'Opening',
+        //     narration: 'Opening Balance',
+        // });
 
         client.accountId = account._id;
         await client.save()

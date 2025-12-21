@@ -1,11 +1,10 @@
-// import express from 'express'
-// import { createProduct, getAllProducts, getProductById, updateProduct, deleteProduct } from './productController.js';
+import express from 'express'
+import { addLedgerEntry, deleteLedgerEntry, getLedgerByAccount } from './ladgerController.js'
 
-// const accountRouter = express.Router()
+const ledgerRouter = express.Router()
 
-// accountRouter.get('/', getAllAccounts)
-// accountRouter.post('/', createAccount)
-// accountRouter.put('/:id', updateAccount)
-// accountRouter.delete('/:id', deleteAccount)
+ledgerRouter.get('/', getLedgerByAccount)
+ledgerRouter.post('/', addLedgerEntry)
+ledgerRouter.put('/:id', deleteLedgerEntry)
 
-// export default accountRouter;
+export default ledgerRouter;
