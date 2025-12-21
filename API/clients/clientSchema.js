@@ -6,6 +6,7 @@ const clientSchema = new mongoose.Schema(
             type: String,
             required: true,
             trim: true,
+            uppercase: true,
             index: true,
         },
         phoneNo: { type: String },
