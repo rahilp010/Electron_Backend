@@ -25,6 +25,10 @@ const clientSchema = new mongoose.Schema(
             required: false,
             index: true,
         },
+        accountNumber: {
+            type: String,
+            required: false,
+        },
         accountType: {
             type: String,
             enum: ['Creditor', 'Debtor'],

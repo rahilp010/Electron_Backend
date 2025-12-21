@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Client from "./clientSchema.js";
 import Account from "../bankAccounts/accounts/accountSchema.js";
 import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
+import generateAccountNumber from "../utils/generateAccountNumber.js";
 // import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 
 // ✅ Get all clients
@@ -52,11 +53,14 @@ const createClient = async (req, res) => {
             salary,
         })
 
+        const accountNumber = await generateAccountNumber();
+
         const account = await Account.create({
             clientId: client._id,
             accountName: client.clientName,
             openingBalance,
             currentBalance: openingBalance,
+            accountNumber,
             accountType,
             isActive: true
         })
@@ -72,6 +76,7 @@ const createClient = async (req, res) => {
         });
 
         client.accountId = account._id;
+        client.accountNumber = accountNumber
         await client.save()
 
         res.status(201).json({ message: "Client created successfully", client });
