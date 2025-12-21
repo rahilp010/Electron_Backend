@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Client from "./clientSchema.js";
 import Account from "../bankAccounts/accounts/accountSchema.js";
+import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 // import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 
 // ✅ Get all clients
@@ -60,15 +61,15 @@ const createClient = async (req, res) => {
             isActive: true
         })
 
-        // await Ledger.create({
-        //     accountId: account._id,
-        //     clientId: client._id,
-        //     entryType: openingBalance >= 0 ? 'debit' : 'credit',
-        //     amount: Math.abs(openingBalance),
-        //     balanceAfter: openingBalance,
-        //     referenceType: 'Opening',
-        //     narration: 'Opening Balance',
-        // });
+        await Ledger.create({
+            accountId: account._id,
+            clientId: client._id,
+            entryType: openingBalance >= 0 ? 'debit' : 'credit',
+            amount: Math.abs(openingBalance),
+            balanceAfter: openingBalance,
+            referenceType: 'Opening',
+            narration: 'Opening Balance',
+        });
 
         client.accountId = account._id;
         await client.save()
@@ -88,6 +89,7 @@ const updateClient = async (req, res) => {
         const { clientName, phoneNo, gstNo, address, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
 
         const client = await Client.findById(id);
+        const account = await Account.findById(id);
         if (!client) {
             return res.status(404).json({ error: 'Client not found' });
         }
@@ -99,6 +101,7 @@ const updateClient = async (req, res) => {
         client.accountType = accountType;
         client.isEmployee = isEmployee;
         client.salary = salary;
+        account.accountName = clientName
 
         await client.save();
 
