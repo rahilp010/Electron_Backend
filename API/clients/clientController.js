@@ -38,14 +38,13 @@ const getClientById = async (req, res) => {
 // ✅ Create new client
 const createClient = async (req, res) => {
     try {
-        const { clientName, phoneNo, gstNo, address, accountId, accountType, openingBalance = 0, pageName, isEmployee, salary } = req.body;
+        const { clientName, phoneNo, gstNo, address, accountType, openingBalance = 0, pageName, isEmployee, salary } = req.body;
 
         const client = await Client.create({
             clientName,
             phoneNo,
             gstNo,
             address,
-            accountId,
             accountType,
             pageName,
             isEmployee,
@@ -85,7 +84,7 @@ const createClient = async (req, res) => {
 const updateClient = async (req, res) => {
     try {
         const { id } = req.params;
-        const { clientName, phoneNo, gstNo, address, accountId, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
+        const { clientName, phoneNo, gstNo, address, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
 
         const client = await Client.findById(id);
         if (!client) {
