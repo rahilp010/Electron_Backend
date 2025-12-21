@@ -44,7 +44,7 @@ const ledgerSchema = new mongoose.Schema(
 
         referenceType: {
             type: String,
-            enum: ['Opening', 'Purchase', 'Sale', 'Payment', 'Adjustment', 'Transfer'],
+            enum: ['Opening', 'Purchase', 'Sales', 'Payment', 'Adjustment', 'Transfer'],
             index: true,
         },
 
