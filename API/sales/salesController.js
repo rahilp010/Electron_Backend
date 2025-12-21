@@ -1,6 +1,7 @@
 import Sales from "./salesSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
+import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
 
 /* ========================= GET ALL ========================= */
 export const getAllSales = async (req, res) => {
@@ -72,12 +73,12 @@ export const createSales = async (req, res) => {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
-    if (product.isStock < quantity) {
+    if (product.quantity < quantity) {
       return res.status(400).json({ error: "Insufficient stock" });
     }
 
     /* ✅ STOCK UPDATE */
-    product.isStock -= quantity;
+    product.quantity -= quantity;
     await product.save();
 
     const totalAmount = saleAmount * quantity;
@@ -94,7 +95,7 @@ export const createSales = async (req, res) => {
 
     await client.save();
 
-    const sale = new Sales({
+    const sale = await Sales.create({
       clientId,
       productId,
       quantity,
@@ -119,7 +120,16 @@ export const createSales = async (req, res) => {
       pageName: "Sales",
     });
 
-    await sale.save();
+    await addClientLedgerEntry({
+      clientId: client._id,
+      accountId: client.accountId,
+      amount: totalAmountWithTax || totalAmount,
+      entryType: 'debit',
+      referenceType: 'Sales',
+      referenceId: sale._id,
+      narration: `Sales to ${client.clientName}`,
+      date,
+    })
 
     const fullSales = await Sales.findById(sale._id)
       .populate("clientId")
@@ -137,6 +147,7 @@ export const createSales = async (req, res) => {
 /* ========================= UPDATE ========================= */
 export const updateSales = async (req, res) => {
   try {
+    const { id } = req.params;
     const {
       clientId,
       productId,
@@ -158,7 +169,7 @@ export const updateSales = async (req, res) => {
       description,
     } = req.body;
 
-    const sale = await Sales.findById(req.params.id);
+    const sale = await Sales.findById(id);
     if (!sale)
       return res.status(404).json({ error: "Sales not found" });
 
@@ -169,11 +180,24 @@ export const updateSales = async (req, res) => {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
+    const oldTotal = sale.totalAmountWithTax || sale.totalAmountWithoutTax;
+    const newTotal = totalAmountWithTax || totalAmountWithoutTax;
+
+    const difference = oldTotal - newTotal;
+
     /* ✅ ROLLBACK OLD STOCK */
-    product.isStock += sale.quantity;
+    product.quantity += sale.quantity;
 
-    const oldTotal = sale.saleAmount * sale.quantity;
+    /* ✅ CHECK NEW STOCK */
+    if (product.quantity < quantity) {
+      return res
+        .status(400)
+        .json({ error: "Insufficient stock after update" });
+    }
 
+    product.quantity -= quantity;
+
+    /* ✅ ROLLBACK */
     if (sale.paymentType === "partial") {
       client.pendingAmount -= sale.pendingAmount;
       client.paidAmount -= sale.paidAmount;
@@ -183,18 +207,7 @@ export const updateSales = async (req, res) => {
       client.pendingAmount -= oldTotal;
     }
 
-    /* ✅ CHECK NEW STOCK */
-    if (product.isStock < quantity) {
-      return res
-        .status(400)
-        .json({ error: "Insufficient stock after update" });
-    }
-
     /* ✅ APPLY NEW VALUES */
-    const newTotal = saleAmount * quantity;
-
-    product.isStock -= quantity;
-
     if (paymentType === "partial") {
       client.pendingAmount += Number(pendingAmount);
       client.paidAmount += Number(paidAmount);
@@ -229,6 +242,18 @@ export const updateSales = async (req, res) => {
     await client.save();
     await sale.save();
 
+    if (difference !== 0) {
+      await addClientLedgerEntry({
+        clientId: client._id,
+        accountId: client.accountId,
+        amount: Math.abs(difference),
+        entryType: difference > 0 ? 'credit' : 'debit',
+        referenceType: 'Adjustment',
+        referenceId: sale._id,
+        narration: `Sales updated adjustment`,
+      });
+    }
+
     const fullSales = await Sales.findById(sale._id)
       .populate("clientId")
       .populate("productId");
@@ -254,7 +279,7 @@ export const deleteSales = async (req, res) => {
     const product = await Product.findById(sale.productId);
 
     if (product) {
-      product.isStock += sale.quantity;
+      product.quantity += sale.quantity;
       await product.save();
     }
 

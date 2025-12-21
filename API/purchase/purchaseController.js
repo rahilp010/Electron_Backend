@@ -1,6 +1,7 @@
 import Purchase from "./purchaseSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
+import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
 
 /* ========================= GET ALL ========================= */
 export const getAllPurchases = async (req, res) => {
@@ -72,12 +73,12 @@ export const createPurchase = async (req, res) => {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
-    if (product.isStock < quantity) {
+    if (product.quantity < quantity) {
       return res.status(400).json({ error: "Insufficient stock" });
     }
 
     /* ✅ STOCK UPDATE */
-    product.isStock -= quantity;
+    product.quantity -= quantity;
     await product.save();
 
     const totalAmount = purchaseAmount * quantity;
@@ -94,7 +95,7 @@ export const createPurchase = async (req, res) => {
 
     await client.save();
 
-    const purchase = new Purchase({
+    const purchase = await Purchase.create({
       clientId,
       productId,
       quantity,
@@ -119,7 +120,16 @@ export const createPurchase = async (req, res) => {
       pageName: "Purchase",
     });
 
-    await purchase.save();
+    await addClientLedgerEntry({
+      clientId: client._id,
+      accountId: client.accountId,
+      amount: totalAmountWithTax || totalAmount,
+      entryType: 'credit',
+      referenceType: 'Purchase',
+      referenceId: purchase._id,
+      narration: `Purchase from ${client.clientName}`,
+      date,
+    });
 
     const fullPurchase = await Purchase.findById(purchase._id)
       .populate("clientId")
@@ -137,6 +147,7 @@ export const createPurchase = async (req, res) => {
 /* ========================= UPDATE ========================= */
 export const updatePurchase = async (req, res) => {
   try {
+    const { id } = req.params;
     const {
       clientId,
       productId,
@@ -158,7 +169,7 @@ export const updatePurchase = async (req, res) => {
       description,
     } = req.body;
 
-    const purchase = await Purchase.findById(req.params.id);
+    const purchase = await Purchase.findById(id);
     if (!purchase)
       return res.status(404).json({ error: "Purchase not found" });
 
@@ -169,11 +180,24 @@ export const updatePurchase = async (req, res) => {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
+    const oldTotal = purchase.totalAmountWithTax || purchase.totalAmountWithoutTax;
+    const newTotal = totalAmountWithTax || totalAmountWithoutTax;
+
+    const difference = oldTotal - newTotal;
+
     /* ✅ ROLLBACK OLD STOCK */
-    product.isStock += purchase.quantity;
+    product.quantity += purchase.quantity;
 
-    const oldTotal = purchase.purchaseAmount * purchase.quantity;
+    /* ✅ CHECK NEW STOCK */
+    if (product.quantity < quantity) {
+      return res
+        .status(400)
+        .json({ error: "Insufficient stock after update" });
+    }
 
+    product.quantity -= quantity;
+
+    /* ✅ ROLLBACK */
     if (purchase.paymentType === "partial") {
       client.pendingAmount -= purchase.pendingAmount;
       client.paidAmount -= purchase.paidAmount;
@@ -183,18 +207,7 @@ export const updatePurchase = async (req, res) => {
       client.pendingAmount -= oldTotal;
     }
 
-    /* ✅ CHECK NEW STOCK */
-    if (product.isStock < quantity) {
-      return res
-        .status(400)
-        .json({ error: "Insufficient stock after update" });
-    }
-
     /* ✅ APPLY NEW VALUES */
-    const newTotal = purchaseAmount * quantity;
-
-    product.isStock -= quantity;
-
     if (paymentType === "partial") {
       client.pendingAmount += Number(pendingAmount);
       client.paidAmount += Number(paidAmount);
@@ -229,6 +242,18 @@ export const updatePurchase = async (req, res) => {
     await client.save();
     await purchase.save();
 
+    if (difference !== 0) {
+      await addClientLedgerEntry({
+        clientId: client._id,
+        accountId: client.accountId,
+        amount: Math.abs(difference),
+        entryType: difference > 0 ? 'debit' : 'credit',
+        referenceType: 'Adjustment',
+        referenceId: purchase._id,
+        narration: `Purchase updated adjustment`,
+      });
+    }
+
     const fullPurchase = await Purchase.findById(purchase._id)
       .populate("clientId")
       .populate("productId");
@@ -244,7 +269,8 @@ export const updatePurchase = async (req, res) => {
 /* ========================= DELETE ========================= */
 export const deletePurchase = async (req, res) => {
   try {
-    const purchase = await Purchase.findById(req.params.id);
+    const { id } = req.params;
+    const purchase = await Purchase.findById(id);
 
     if (!purchase) {
       return res.status(404).json({ error: "Purchase not found" });
@@ -254,7 +280,7 @@ export const deletePurchase = async (req, res) => {
     const product = await Product.findById(purchase.productId);
 
     if (product) {
-      product.isStock += purchase.quantity;
+      product.quantity += purchase.quantity;
       await product.save();
     }
 
@@ -273,9 +299,9 @@ export const deletePurchase = async (req, res) => {
       await client.save();
     }
 
-    await Purchase.findByIdAndDelete(req.params.id);
+    await Purchase.findByIdAndDelete(id);
 
-    res.status(200).json({ message: "Purchase deleted successfully", id: req.params.id });
+    res.status(200).json({ message: "Purchase deleted successfully", id });
   } catch (error) {
     console.error("❌ Error deleting purchase:", error);
     res.status(500).json({ error: "Failed to delete purchase" });

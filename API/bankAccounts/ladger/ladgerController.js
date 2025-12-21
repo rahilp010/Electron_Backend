@@ -21,6 +21,21 @@ const getLedgerByAccount = async (req, res) => {
   }
 };
 
+export const getClientLedger = async (req, res) => {
+  try {
+    const { clientId } = req.params;
+
+    const ledger = await Ledger.find({ clientId })
+      .sort({ date: 1, createdAt: 1 });
+
+    res.status(200).json(ledger);
+  } catch (error) {
+    console.error('❌ Error fetching ledger:', error);
+    res.status(500).json({ error: 'Failed to fetch ledger' });
+  }
+};
+
+
 /* ================= ADD LEDGER ENTRY ================= */
 const addLedgerEntry = async (req, res) => {
   try {
