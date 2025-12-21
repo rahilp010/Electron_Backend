@@ -61,9 +61,5 @@ const ledgerSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-ledgerSchema.index({ accountId: 1, date: 1 });
-ledgerSchema.index({ clientId: 1, date: 1 });
-ledgerSchema.index({ accountId: 1, createdAt: -1 });
-
 const Ledger = mongoose.model('Ledger', ledgerSchema);
 export default Ledger;

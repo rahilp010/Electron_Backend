@@ -14,9 +14,7 @@ const accountSchema = new mongoose.Schema(
     },
     { timestamps: true }
 )
-accountSchema.index({ accountName: "text" });
-accountSchema.index({ createdAt: -1 });
-accountSchema.index({ clientId: 1, createdAt: -1 });
+
 
 const Account = mongoose.model("Account", accountSchema);
 export default Account;

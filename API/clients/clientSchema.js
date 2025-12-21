@@ -38,9 +38,6 @@ const clientSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-clientSchema.index({ clientName: 1 });
-clientSchema.index({ phoneNo: 1 });
-clientSchema.index({ accountId: 1 });
 
 const Client = mongoose.model("Client", clientSchema);
 export default Client;
