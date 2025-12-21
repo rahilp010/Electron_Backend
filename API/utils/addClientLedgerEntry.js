@@ -1,5 +1,5 @@
-import Account from "../bankAccounts/accounts/accountSchema";
-import Ledger from "../bankAccounts/ladger/ladgerSchema";
+import Account from "../bankAccounts/accounts/accountSchema.js";
+import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 
 
 const addClientLedgerEntry = async ({
