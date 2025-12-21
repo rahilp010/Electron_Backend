@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import Client from "./clientSchema.js";
+import Account from "../bankAccounts/accounts/accountSchema.js";
+import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 
 // ✅ Get all clients
 const getAllClients = async (req, res, next) => {
@@ -36,25 +38,42 @@ const getClientById = async (req, res) => {
 // ✅ Create new client
 const createClient = async (req, res) => {
     try {
-        const { clientName, phoneNo, gstNo, address, pendingAmount, paidAmount, pendingFromOurs, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
-        const newClient = new Client({
+        const { clientName, phoneNo, gstNo, address, accountId, accountType, openingBalance = 0, pageName, isEmployee, salary } = req.body;
+
+        const client = await Client.create({
             clientName,
             phoneNo,
             gstNo,
             address,
-            pendingAmount,
-            paidAmount,
-            pendingFromOurs,
+            accountId,
             accountType,
             pageName,
             isEmployee,
             salary,
-            salaryHistory,
+        })
+
+        const account = await Account.create({
+            clientId: client._id,
+            openingBalance,
+            currentBalance: openingBalance,
+            accountType,
+            isActive: true
+        })
+
+        await Ledger.create({
+            accountId: account._id,
+            clientId: client._id,
+            entryType: openingBalance >= 0 ? 'debit' : 'credit',
+            amount: Math.abs(openingBalance),
+            balanceAfter: openingBalance,
+            referenceType: 'Opening',
+            narration: 'Opening Balance',
         });
 
-        await newClient.save();
+        client.accountId = account._id;
+        await client.save()
 
-        res.status(201).json({ message: "Client inserted successfully", client: newClient });
+        res.status(201).json({ message: "Client created successfully", client });
         console.log("Client inserted successfully");
     } catch (error) {
         console.error("Error inserting client:", error);
@@ -66,31 +85,24 @@ const createClient = async (req, res) => {
 const updateClient = async (req, res) => {
     try {
         const { id } = req.params;
-        const { clientName, phoneNo, gstNo, address, pendingAmount, paidAmount, pendingFromOurs, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
-        const updatedClient = await Client.findByIdAndUpdate(
-            id,
-            {
-                clientName,
-                phoneNo,
-                gstNo,
-                address,
-                pendingAmount,
-                paidAmount,
-                pendingFromOurs,
-                accountType,
-                pageName,
-                isEmployee,
-                salary,
-                salaryHistory,
-            },
-            { new: true, runValidators: true }
-        );
+        const { clientName, phoneNo, gstNo, address, accountId, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
 
-        if (!updatedClient) {
-            return res.status(404).json({ error: "Client not found" });
+        const client = await Client.findById(id);
+        if (!client) {
+            return res.status(404).json({ error: 'Client not found' });
         }
 
-        res.status(200).json({ message: "Client updated successfully", client: updatedClient });
+        client.clientName = clientName;
+        client.phoneNo = phoneNo;
+        client.gstNo = gstNo;
+        client.address = address;
+        client.accountType = accountType;
+        client.isEmployee = isEmployee;
+        client.salary = salary;
+
+        await client.save();
+
+        res.status(200).json({ message: "Client updated successfully", client });
     } catch (error) {
         console.error("❌ Error updating client:", error);
         res.status(500).json({ error: "Failed to update client" });
@@ -100,11 +112,25 @@ const updateClient = async (req, res) => {
 // ✅ Delete client
 const deleteClient = async (req, res) => {
     try {
-        const deletedClient = await Client.findByIdAndDelete(req.params.id);
+        const { id } = req.params;
 
-        if (!deletedClient) {
-            return res.status(404).json({ error: "Client not found" });
+        const client = await Client.findById(id);
+        if (!client) {
+            return res.status(404).json({ error: 'Client not found' });
         }
+        const ledgerCount = await Ledger.countDocuments({
+            accountId: client.accountId,
+        });
+
+        if (ledgerCount > 1) {
+            return res.status(400).json({
+                error: 'Cannot delete client with ledger history',
+            });
+        }
+
+        await Ledger.deleteMany({ accountId: client.accountId });
+        await Account.findByIdAndDelete(client.accountId);
+        await Client.findByIdAndDelete(id);
 
         res.status(200).json({ message: "Client deleted successfully" });
     } catch (error) {
