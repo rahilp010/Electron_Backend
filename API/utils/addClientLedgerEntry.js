@@ -17,9 +17,9 @@ const addClientLedgerEntry = async ({
     let newBalance = account.currentBalance;
 
     if (entryType === 'debit') {
-        newBalance -= amount;
-    } else {
         newBalance += amount;
+    } else {
+        newBalance -= amount;
     }
 
     await Ledger.create({
