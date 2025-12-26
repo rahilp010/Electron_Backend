@@ -61,8 +61,8 @@ const addLedgerEntry = async (req, res) => {
     /* 🔢 CALCULATE BALANCE */
     const newBalance =
       entryType === 'debit'
-        ? account.currentBalance + amount
-        : account.currentBalance - amount;
+        ? account.currentBalance - amount
+        : account.currentBalance + amount;
 
     /* 🧾 CREATE LEDGER ENTRY */
     const ledger = await Ledger.create({
