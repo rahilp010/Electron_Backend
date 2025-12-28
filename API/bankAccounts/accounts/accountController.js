@@ -14,6 +14,7 @@ const getAllAccounts = async (req, res) => {
                 isActive: 1,
                 clientId: 1,
                 createdAt: 1,
+                openingBalance: 1,
             }
         )
             .populate({
