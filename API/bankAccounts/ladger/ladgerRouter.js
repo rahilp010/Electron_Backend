@@ -5,7 +5,7 @@ const ledgerRouter = express.Router()
 
 ledgerRouter.get('/', getLedgerByAccount)
 ledgerRouter.get('/client/:clientId', getClientLedger)
-ledgerRouter.get('/transfer', getTransferHistory)
+ledgerRouter.get('/history', getTransferHistory)
 ledgerRouter.post('/', addLedgerEntry)
 ledgerRouter.delete('/:id', deleteLedgerEntry)
 

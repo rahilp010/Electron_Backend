@@ -106,7 +106,8 @@ const getTransferHistory = async (req, res) => {
       referenceType: 'Transfer',
     })
       .sort({ createdAt: -1 })
-      .limit(50);
+      .populate('clientId', 'clientName')
+      .lean();
 
     res.status(200).json(history);
   } catch (error) {
