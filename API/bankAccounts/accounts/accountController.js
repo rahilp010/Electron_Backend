@@ -2,12 +2,27 @@ import mongoose from 'mongoose';
 import Account from './accountSchema.js';
 import Ledger from '../ladger/ladgerSchema.js';
 
-/* ================= GET ALL ACCOUNTS ================= */
 const getAllAccounts = async (req, res) => {
     try {
-        const accounts = await Account.find()
-            .populate('clientId', 'clientName accountType')
-            .sort({ createdAt: -1 });
+        const accounts = await Account.find(
+            {},
+            {
+                accountName: 1,
+                accountNumber: 1,
+                bankName: 1,
+                currentBalance: 1,
+                isActive: 1,
+                clientId: 1,
+                createdAt: 1,
+            }
+        )
+            .populate({
+                path: 'clientId',
+                select: 'clientName accountType',
+                options: { lean: true },
+            })
+            .sort({ createdAt: -1 })
+            .lean(); // 🔥 huge performance boost
 
         res.status(200).json(accounts);
     } catch (error) {
@@ -16,7 +31,7 @@ const getAllAccounts = async (req, res) => {
     }
 };
 
-/* ================= GET ACCOUNT BY ID ================= */
+
 const getAccountById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -25,10 +40,13 @@ const getAccountById = async (req, res) => {
             return res.status(400).json({ error: 'Invalid account ID' });
         }
 
-        const account = await Account.findById(id).populate(
-            'clientId',
-            'clientName phoneNo'
-        );
+        const account = await Account.findById(id)
+            .populate({
+                path: 'clientId',
+                select: 'clientName phoneNo',
+                options: { lean: true },
+            })
+            .lean();
 
         if (!account) {
             return res.status(404).json({ error: 'Account not found' });
@@ -41,22 +59,26 @@ const getAccountById = async (req, res) => {
     }
 };
 
-/* ================= UPDATE ACCOUNT (NON-FINANCIAL) ================= */
+
 const updateAccount = async (req, res) => {
     try {
         const { id } = req.params;
         const { bankName, accountNumber, isActive } = req.body;
 
-        const account = await Account.findById(id);
+        const update = {};
+        if (bankName !== undefined) update.bankName = bankName;
+        if (accountNumber !== undefined) update.accountNumber = accountNumber;
+        if (isActive !== undefined) update.isActive = isActive;
+
+        const account = await Account.findByIdAndUpdate(
+            id,
+            { $set: update },
+            { new: true, lean: true }
+        );
+
         if (!account) {
             return res.status(404).json({ error: 'Account not found' });
         }
-
-        account.bankName = bankName ?? account.bankName;
-        account.accountNumber = accountNumber ?? account.accountNumber;
-        account.isActive = isActive ?? account.isActive;
-
-        await account.save();
 
         res.status(200).json({
             message: 'Account updated successfully',
@@ -68,20 +90,22 @@ const updateAccount = async (req, res) => {
     }
 };
 
-/* ================= DELETE ACCOUNT (SAFE) ================= */
+
 const deleteAccount = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const account = await Account.findById(id);
+        const account = await Account.findById(id).lean();
         if (!account) {
             return res.status(404).json({ error: 'Account not found' });
         }
 
-        const ledgerCount = await Ledger.countDocuments({ accountId: id });
+        const ledgerEntries = await Ledger.find(
+            { accountId: id },
+            { _id: 1 }
+        ).limit(2); // 🔥 very fast
 
-        // Opening entry counts as 1
-        if (ledgerCount > 1) {
+        if (ledgerEntries.length > 1) {
             return res.status(400).json({
                 error: 'Cannot delete account with ledger history',
             });
@@ -96,6 +120,7 @@ const deleteAccount = async (req, res) => {
         res.status(500).json({ error: 'Failed to delete account' });
     }
 };
+
 
 export {
     getAllAccounts,

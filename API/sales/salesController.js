@@ -127,7 +127,7 @@ export const createSales = async (req, res) => {
       entryType: 'debit',
       referenceType: 'Sales',
       referenceId: sale._id,
-      narration: `Sales to ${client.clientName}`,
+      narration: `Sales ${product.productName}*${sale.quantity}`,
       date,
     })
 

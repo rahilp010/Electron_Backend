@@ -127,7 +127,7 @@ export const createPurchase = async (req, res) => {
       entryType: 'credit',
       referenceType: 'Purchase',
       referenceId: purchase._id,
-      narration: `Purchase from ${client.clientName}`,
+      narration: `Purchase ${product.productName}*${purchase.quantity}`,
       date,
     });
 
