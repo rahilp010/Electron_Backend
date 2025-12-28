@@ -1,10 +1,11 @@
 import express from 'express'
-import { addLedgerEntry, deleteLedgerEntry, getLedgerByAccount, getClientLedger } from './ladgerController.js'
+import { addLedgerEntry, deleteLedgerEntry, getLedgerByAccount, getClientLedger, getTransferHistory } from './ladgerController.js'
 
 const ledgerRouter = express.Router()
 
 ledgerRouter.get('/', getLedgerByAccount)
 ledgerRouter.get('/client/:clientId', getClientLedger)
+ledgerRouter.get('/transfer', getTransferHistory)
 ledgerRouter.post('/', addLedgerEntry)
 ledgerRouter.delete('/:id', deleteLedgerEntry)
 

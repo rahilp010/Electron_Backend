@@ -93,6 +93,28 @@ const addLedgerEntry = async (req, res) => {
   }
 };
 
+const getTransferHistory = async (req, res) => {
+  try {
+    const { accountId } = req.query;
+
+    if (!accountId) {
+      return res.status(400).json({ error: 'accountId is required' });
+    }
+
+    const history = await Ledger.find({
+      accountId,
+      referenceType: 'Transfer',
+    })
+      .sort({ createdAt: -1 })
+      .limit(50);
+
+    res.status(200).json(history);
+  } catch (error) {
+    console.error('❌ Transfer history error:', error);
+    res.status(500).json({ error: 'Failed to fetch transfer history' });
+  }
+}
+
 /* ================= DELETE LEDGER ENTRY (SAFE) ================= */
 const deleteLedgerEntry = async (req, res) => {
   try {
@@ -135,4 +157,5 @@ export {
   getLedgerByAccount,
   addLedgerEntry,
   deleteLedgerEntry,
+  getTransferHistory
 };
