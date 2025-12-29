@@ -9,7 +9,7 @@ const updateProductStock = async ({ product, quantity, pageName, totalAmountWith
         }
     }
 
-    if (type === 'sale') {
+    if (pageName === 'Sales') {
         if (product.productQuantity < quantity) {
             throw new Error('Insufficient stock');
         }
