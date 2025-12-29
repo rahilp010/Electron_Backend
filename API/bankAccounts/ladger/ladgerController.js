@@ -104,6 +104,19 @@ export const getTransferHistory = async (req, res) => {
   }
 };
 
+const getClientLedger = async (req, res) => {
+  try {
+    const { clientId } = req.params;
+
+    const ledger = await Ledger.find({ clientId })
+      .sort({ date: 1, createdAt: 1 });
+
+    res.status(200).json(ledger);
+  } catch (error) {
+    console.error('❌ Error fetching ledger:', error);
+    res.status(500).json({ error: 'Failed to fetch ledger' });
+  }
+};
 
 /* ================= DELETE LEDGER ENTRY (SAFE) ================= */
 const deleteLedgerEntry = async (req, res) => {
@@ -147,5 +160,6 @@ export {
   getLedgerByAccount,
   addLedgerEntry,
   deleteLedgerEntry,
-  getTransferHistory
+  getTransferHistory,
+  getClientLedger
 };
