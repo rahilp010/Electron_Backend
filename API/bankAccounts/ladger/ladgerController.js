@@ -79,7 +79,7 @@ const addLedgerEntry = async (req, res) => {
   }
 };
 
-export const getTransferHistory = async (req, res) => {
+const getTransferHistory = async (req, res) => {
   try {
     const { accountId } = req.query;
 
