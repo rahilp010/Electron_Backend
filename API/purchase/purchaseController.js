@@ -73,12 +73,8 @@ export const createPurchase = async (req, res) => {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
-    if (product.quantity < quantity) {
-      return res.status(400).json({ error: "Insufficient stock" });
-    }
-
     /* ✅ STOCK UPDATE */
-    product.quantity -= quantity;
+    product.quantity += Number(quantity);
     await product.save();
 
     const totalAmount = purchaseAmount * quantity;
@@ -186,16 +182,9 @@ export const updatePurchase = async (req, res) => {
     const difference = oldTotal - newTotal;
 
     /* ✅ ROLLBACK OLD STOCK */
-    product.quantity += purchase.quantity;
+    product.quantity -= purchase.quantity;
 
-    /* ✅ CHECK NEW STOCK */
-    if (product.quantity < quantity) {
-      return res
-        .status(400)
-        .json({ error: "Insufficient stock after update" });
-    }
-
-    product.quantity -= quantity;
+    product.quantity += quantity;
 
     /* ✅ ROLLBACK */
     if (purchase.paymentType === "partial") {

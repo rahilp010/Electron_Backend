@@ -3,7 +3,15 @@ import Product from "./productSchema.js";
 
 const getAllProducts = async (req, res) => {
     try {
-        const products = await Product.find().sort({ createdAt: -1 });
+        const page = Number(req.query.page || 1);
+        const limit = 20;
+        const skip = (page - 1) * limit;
+
+        const products = await Product.find({})
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
         res.status(200).json(products);
     } catch (error) {
         console.error("❌ Error fetching products:", error);
@@ -13,77 +21,124 @@ const getAllProducts = async (req, res) => {
 
 const getProductById = async (req, res) => {
     try {
+        const { id } = req.params;
 
-        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
-            return res.status(400).json({ error: "Invalid product ID format" });
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: "Invalid product ID" });
         }
 
+        const product = await Product.findById(id).lean();
 
-        const product = await Product.findById(req.params.id);
-        console.log("product", product);
+        if (!product) {
+            return res.status(404).json({ error: "Product not found" });
+        }
 
-        if (!product) return res.status(404).json({ error: "Product not found" });
         res.status(200).json(product);
     } catch (error) {
         console.error("❌ Error fetching product:", error);
         res.status(500).json({ error: "Failed to fetch product" });
     }
-}
+};
 
 const createProduct = async (req, res) => {
     try {
-        const { productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts } = req.body;
-        const newProduct = new Product({ productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts });
-        await newProduct.save();
+        const {
+            productName,
+            productPrice,
+            productQuantity,
+            clientName,
+            assetType,
+            saleHSN,
+            purchaseHSN,
+            taxRate = 0,
+            taxAmount = 0,
+            totalAmountWithTax = 0,
+            totalAmountWithoutTax = 0,
+            addParts,
+        } = req.body;
 
-        res.status(201).json({ message: "Product inserted successfully", product: newProduct });
-        console.log("✅ Product inserted successfully");
+        if (!productName || !productPrice) {
+            return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const newProduct = await Product.create({
+            productName,
+            productPrice,
+            productQuantity,
+            clientName,
+            assetType,
+            saleHSN,
+            purchaseHSN,
+            taxRate,
+            taxAmount,
+            totalAmountWithTax,
+            totalAmountWithoutTax,
+            addParts,
+        });
+
+        res.status(201).json({
+            message: 'Product created successfully',
+            product: newProduct,
+        });
     } catch (error) {
-        console.error("❌ Error inserting product:", error);
-        res.status(500).json({ error: "Failed to add product" });
+        console.error('❌ Error inserting product:', error);
+        res.status(500).json({ error: 'Failed to add product' });
     }
-}
+};
+
 
 const updateProduct = async (req, res) => {
     try {
         const { id } = req.params;
-        const { productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts } = req.body;
+
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid product ID' });
+        }
 
         const updatedProduct = await Product.findByIdAndUpdate(
             id,
-            { productName, productPrice, productQuantity, clientName, assetType, saleHSN, purchaseHSN, taxRate, taxAmount, totalAmountWithTax, totalAmountWithoutTax, addParts },
-            { new: true } // return updated doc
-        );
+            req.body,
+            {
+                new: true,
+                runValidators: true,
+            }
+        ).lean();
 
         if (!updatedProduct) {
-            return res.status(404).json({ error: "Product not found" });
+            return res.status(404).json({ error: 'Product not found' });
         }
 
-        res.status(200).json({ message: "Product updated successfully", product: updatedProduct });
+        res.status(200).json({
+            message: 'Product updated successfully',
+            product: updatedProduct,
+        });
     } catch (error) {
-        console.error("❌ Error updating product:", error);
-        res.status(500).json({ error: "Failed to update product" });
+        console.error('❌ Error updating product:', error);
+        res.status(500).json({ error: 'Failed to update product' });
     }
 };
-
 
 const deleteProduct = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const deletedProduct = await Product.findByIdAndDelete(id);
-
-        if (!deletedProduct) {
-            return res.status(404).json({ error: "Product not found" });
+        if (!mongoose.Types.ObjectId.isValid(id)) {
+            return res.status(400).json({ error: 'Invalid product ID' });
         }
 
-        res.status(200).json({ message: "Product deleted successfully" });
-        console.log("🗑️ Product deleted successfully");
+        const deleted = await Product.findByIdAndDelete(id);
+
+        if (!deleted) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        res.status(200).json({ message: 'Product deleted successfully' });
     } catch (error) {
-        console.error("❌ Error deleting product:", error);
-        res.status(500).json({ error: "Failed to delete product" });
+        console.error('❌ Error deleting product:', error);
+        res.status(500).json({ error: 'Failed to delete product' });
     }
 };
+
 
 
 export { createProduct, getAllProducts, getProductById, updateProduct, deleteProduct };
