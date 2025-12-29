@@ -305,6 +305,8 @@ export const deletePurchase = async (req, res) => {
 
     if (product) {
       product.productQuantity -= purchase.quantity;
+      product.totalAmountWithTax -= purchase.totalAmountWithTax;
+      product.totalAmountWithoutTax -= purchase.totalAmountWithoutTax;
       await product.save();
     }
 

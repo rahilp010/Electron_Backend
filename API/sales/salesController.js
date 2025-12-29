@@ -310,6 +310,8 @@ export const deleteSales = async (req, res) => {
 
     if (product) {
       product.productQuantity += sale.quantity;
+      product.totalAmountWithTax += sale.totalAmountWithTax;
+      product.totalAmountWithoutTax += sale.totalAmountWithoutTax;
       await product.save();
     }
 
