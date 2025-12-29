@@ -50,18 +50,14 @@ export const createPurchase = async (req, res) => {
       paidAmount = 0,
       pendingFromOurs = 0,
       taxRate = 0,
-      taxAmount = 0,
       freightCharges = 0,
       freightTaxAmount = 0,
-      totalAmountWithTax,
-      totalAmountWithoutTax,
       paymentMethod,
       methodType,
       billNo,
       dueDate,
       description,
       date,
-      pageName
     } = req.body;
 
     if (!clientId || !productId || !quantity || !purchaseAmount) {
@@ -75,29 +71,48 @@ export const createPurchase = async (req, res) => {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
-    /* ✅ STOCK UPDATE */
-    // product.productQuantity += Number(quantity);
-    // await product.save();
+    const qty = Number(quantity);
+    const price = Number(purchaseAmount);
 
-    const totalAmount = purchaseAmount * quantity;
+    const subtotal = price * qty;
+    const taxAmount = (subtotal * Number(taxRate)) / 100;
+    const freightTotal =
+      Number(freightCharges) + Number(freightTaxAmount);
 
-    /* ✅ CLIENT BALANCE UPDATE */
+    const grandTotal = subtotal + taxAmount + freightTotal;
+
+    product.productQuantity += qty;
+
+    product.totalAmountWithoutTax =
+      (product.totalAmountWithoutTax || 0) + subtotal;
+
+    product.taxAmount =
+      (product.taxAmount || 0) + taxAmount;
+
+    product.totalAmountWithTax =
+      (product.totalAmountWithTax || 0) + grandTotal;
+
+    await product.save();
+
     if (paymentType === "partial") {
       client.pendingAmount += Number(pendingAmount);
       client.paidAmount += Number(paidAmount);
     } else if (statusOfTransaction === "completed") {
-      client.paidAmount += totalAmount;
+      client.paidAmount += grandTotal;
     } else {
-      client.pendingAmount += totalAmount;
+      client.pendingAmount += grandTotal;
     }
 
     await client.save();
 
+    /* ================================
+       🧾 CREATE PURCHASE
+    ================================= */
     const purchase = await Purchase.create({
       clientId,
       productId,
-      quantity,
-      purchaseAmount,
+      quantity: qty,
+      purchaseAmount: price,
       statusOfTransaction,
       paymentType,
       pendingAmount,
@@ -107,8 +122,8 @@ export const createPurchase = async (req, res) => {
       taxAmount,
       freightCharges,
       freightTaxAmount,
-      totalAmountWithTax,
-      totalAmountWithoutTax,
+      totalAmountWithoutTax: subtotal,
+      totalAmountWithTax: grandTotal,
       paymentMethod,
       methodType,
       billNo,
@@ -118,17 +133,14 @@ export const createPurchase = async (req, res) => {
       pageName: "Purchase",
     });
 
-    await updateProductStock(product, quantity, pageName, totalAmountWithTax, totalAmountWithoutTax)
-    await product.save()
-
     await addClientLedgerEntry({
       clientId: client._id,
       accountId: client.accountId,
-      amount: totalAmountWithTax || totalAmount,
-      entryType: 'credit',
-      referenceType: 'Purchase',
+      amount: grandTotal,
+      entryType: "credit",
+      referenceType: "Purchase",
       referenceId: purchase._id,
-      narration: `Purchase ${product.productName}*${purchase.quantity}`,
+      narration: `Purchase ${product.productName} × ${qty}`,
       date,
     });
 
@@ -145,6 +157,7 @@ export const createPurchase = async (req, res) => {
 };
 
 
+
 /* ========================= UPDATE ========================= */
 export const updatePurchase = async (req, res) => {
   try {
@@ -159,11 +172,8 @@ export const updatePurchase = async (req, res) => {
       pendingAmount,
       paidAmount,
       taxRate,
-      taxAmount,
       freightCharges,
       freightTaxAmount,
-      totalAmountWithoutTax,
-      totalAmountWithTax,
       billNo,
       date,
       dueDate,
@@ -174,42 +184,47 @@ export const updatePurchase = async (req, res) => {
     if (!purchase)
       return res.status(404).json({ error: "Purchase not found" });
 
-    const client = await Client.findById(clientId);
-    const product = await Product.findById(productId);
+    const oldProduct = await Product.findById(purchase.productId);
+    const oldClient = await Client.findById(purchase.clientId);
 
-    if (!client || !product) {
+    const newProduct = await Product.findById(productId);
+    const newClient = await Client.findById(clientId);
+
+    if (!oldProduct || !newProduct || !oldClient || !newClient) {
       return res.status(404).json({ error: "Client or Product not found" });
     }
 
-    const oldTotal = purchase.totalAmountWithTax || purchase.totalAmountWithoutTax;
-    const newTotal = totalAmountWithTax || totalAmountWithoutTax;
-
-    const difference = oldTotal - newTotal;
-
     /* ✅ ROLLBACK OLD STOCK */
-    product.productQuantity -= purchase.quantity;
+    oldProduct.productQuantity -= purchase.quantity;
 
-    product.productQuantity += quantity;
+    newProduct.productQuantity += quantity;
 
-    /* ✅ ROLLBACK */
+    const subtotal = purchaseAmount * quantity;
+    const tax = (subtotal * (taxRate || 0)) / 100;
+    const grandTotal = subtotal + tax;
+
+    const oldTotal = purchase.totalAmountWithTax || purchase.totalAmountWithoutTax;
+
     if (purchase.paymentType === "partial") {
-      client.pendingAmount -= purchase.pendingAmount;
-      client.paidAmount -= purchase.paidAmount;
+      oldClient.pendingAmount -= purchase.pendingAmount;
+      oldClient.paidAmount -= purchase.paidAmount;
     } else if (purchase.statusOfTransaction === "completed") {
-      client.paidAmount -= oldTotal;
+      oldClient.paidAmount -= oldTotal;
     } else {
-      client.pendingAmount -= oldTotal;
+      oldClient.pendingAmount -= oldTotal;
     }
+
 
     /* ✅ APPLY NEW VALUES */
     if (paymentType === "partial") {
-      client.pendingAmount += Number(pendingAmount);
-      client.paidAmount += Number(paidAmount);
+      newClient.pendingAmount += Number(pendingAmount);
+      newClient.paidAmount += Number(paidAmount);
     } else if (statusOfTransaction === "completed") {
-      client.paidAmount += newTotal;
+      newClient.paidAmount += grandTotal;
     } else {
-      client.pendingAmount += newTotal;
+      newClient.pendingAmount += grandTotal;
     }
+
 
     Object.assign(purchase, {
       clientId,
@@ -221,32 +236,44 @@ export const updatePurchase = async (req, res) => {
       pendingAmount,
       paidAmount,
       taxRate,
-      taxAmount,
+      taxAmount: tax,
+      totalAmountWithoutTax: subtotal,
+      totalAmountWithTax: grandTotal,
       freightCharges,
       freightTaxAmount,
-      totalAmountWithoutTax,
-      totalAmountWithTax,
       billNo,
       date,
       dueDate,
       description,
     });
 
-    await product.save();
-    await client.save();
+    await oldProduct.save();
+    if (oldProduct._id.toString() !== newProduct._id.toString()) {
+      await newProduct.save();
+    }
+
+    await oldClient.save();
+    if (oldClient._id.toString() !== newClient._id.toString()) {
+      await newClient.save();
+    }
+
     await purchase.save();
+
+    const difference = grandTotal - oldTotal;
 
     if (difference !== 0) {
       await addClientLedgerEntry({
-        clientId: client._id,
-        accountId: client.accountId,
+        clientId: newClient._id,
+        accountId: newClient.accountId,
         amount: Math.abs(difference),
-        entryType: difference > 0 ? 'debit' : 'credit',
-        referenceType: 'Adjustment',
+        entryType: difference > 0 ? 'credit' : 'debit',
+        referenceType: 'Purchase Adjustment',
         referenceId: purchase._id,
-        narration: `Purchase updated adjustment`,
+        narration: 'Purchase updated adjustment',
+        date,
       });
     }
+
 
     const fullPurchase = await Purchase.findById(purchase._id)
       .populate("clientId")
@@ -264,8 +291,8 @@ export const updatePurchase = async (req, res) => {
 export const deletePurchase = async (req, res) => {
   try {
     const { id } = req.params;
-    const purchase = await Purchase.findById(id);
 
+    const purchase = await Purchase.findById(id);
     if (!purchase) {
       return res.status(404).json({ error: "Purchase not found" });
     }
@@ -273,31 +300,50 @@ export const deletePurchase = async (req, res) => {
     const client = await Client.findById(purchase.clientId);
     const product = await Product.findById(purchase.productId);
 
+    const totalAmount =
+      purchase.totalAmountWithTax || purchase.totalAmountWithoutTax;
+
     if (product) {
       product.productQuantity -= purchase.quantity;
       await product.save();
     }
 
     if (client) {
-      const amount = purchase.purchaseAmount * purchase.quantity;
-
       if (purchase.paymentType === "partial") {
         client.pendingAmount -= purchase.pendingAmount;
         client.paidAmount -= purchase.paidAmount;
       } else if (purchase.statusOfTransaction === "completed") {
-        client.paidAmount -= amount;
+        client.paidAmount -= totalAmount;
       } else {
-        client.pendingAmount -= amount;
+        client.pendingAmount -= totalAmount;
       }
 
       await client.save();
     }
 
+    if (client) {
+      await addClientLedgerEntry({
+        clientId: client._id,
+        accountId: client.accountId,
+        amount: totalAmount,
+        entryType: "debit", // reversing purchase credit
+        referenceType: "Purchase Deleted",
+        referenceId: purchase._id,
+        narration: `Purchase deleted`,
+        date: new Date(),
+      });
+    }
+
     await Purchase.findByIdAndDelete(id);
 
-    res.status(200).json({ message: "Purchase deleted successfully", id });
+    res.status(200).json({
+      message: "Purchase deleted successfully",
+      id,
+    });
+
   } catch (error) {
     console.error("❌ Error deleting purchase:", error);
     res.status(500).json({ error: "Failed to delete purchase" });
   }
 };
+
