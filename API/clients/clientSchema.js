@@ -39,6 +39,9 @@ const clientSchema = new mongoose.Schema(
         pageName: { type: String, default: 'Client' },
         isEmployee: { type: Number, default: 0 },
         salary: { type: Number, default: 0 },
+        pendingAmount: { type: Number },
+        paidAmount: { type: Number },
+        pendingFromOurs: { type: Number }
     },
     { timestamps: true }
 );

@@ -40,7 +40,7 @@ const getClientById = async (req, res) => {
 // ✅ Create new client
 const createClient = async (req, res) => {
     try {
-        const { clientName, phoneNo, gstNo, address, accountType, openingBalance = 0, pageName, isEmployee, salary } = req.body;
+        const { clientName, phoneNo, gstNo, address, accountType, openingBalance = 0, pageName, isEmployee, salary, pendingAmount = 0, paidAmount = 0, pendingFromOurs = 0 } = req.body;
 
         const client = await Client.create({
             clientName,
@@ -51,6 +51,9 @@ const createClient = async (req, res) => {
             pageName,
             isEmployee,
             salary,
+            pendingAmount,
+            paidAmount,
+            pendingFromOurs
         })
 
         const accountNumber = await generateAccountNumber();
@@ -91,7 +94,7 @@ const createClient = async (req, res) => {
 const updateClient = async (req, res) => {
     try {
         const { id } = req.params;
-        const { clientName, phoneNo, gstNo, address, accountType, pageName, isEmployee, salary, salaryHistory } = req.body;
+        const { clientName, phoneNo, gstNo, address, accountType, pageName, isEmployee, salary, pendingAmount, paidAmount, pendingFromOurs } = req.body;
 
         const client = await Client.findById(id);
         if (!client) {
@@ -110,6 +113,9 @@ const updateClient = async (req, res) => {
         client.accountType = accountType;
         client.isEmployee = isEmployee;
         client.salary = salary;
+        client.pendingAmount = pendingAmount;
+        client.paidAmount = paidAmount;
+        client.pendingFromOurs = pendingFromOurs;
 
         account.accountName = clientName;
         account.accountType = accountType;
