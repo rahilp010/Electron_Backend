@@ -74,7 +74,7 @@ export const createPurchase = async (req, res) => {
     }
 
     /* ✅ STOCK UPDATE */
-    product.quantity += Number(quantity);
+    product.productQuantity += Number(quantity);
     await product.save();
 
     const totalAmount = purchaseAmount * quantity;
@@ -182,9 +182,9 @@ export const updatePurchase = async (req, res) => {
     const difference = oldTotal - newTotal;
 
     /* ✅ ROLLBACK OLD STOCK */
-    product.quantity -= purchase.quantity;
+    product.productQuantity -= purchase.quantity;
 
-    product.quantity += quantity;
+    product.productQuantity += quantity;
 
     /* ✅ ROLLBACK */
     if (purchase.paymentType === "partial") {
@@ -269,7 +269,7 @@ export const deletePurchase = async (req, res) => {
     const product = await Product.findById(purchase.productId);
 
     if (product) {
-      product.quantity += purchase.quantity;
+      product.productQuantity -= purchase.quantity;
       await product.save();
     }
 

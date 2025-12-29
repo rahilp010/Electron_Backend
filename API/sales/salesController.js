@@ -78,7 +78,7 @@ export const createSales = async (req, res) => {
     }
 
     /* ✅ STOCK UPDATE */
-    product.quantity -= quantity;
+    product.productQuantity -= quantity;
     await product.save();
 
     const totalAmount = saleAmount * quantity;
@@ -186,16 +186,16 @@ export const updateSales = async (req, res) => {
     const difference = oldTotal - newTotal;
 
     /* ✅ ROLLBACK OLD STOCK */
-    product.quantity += sale.quantity;
+    product.productQuantity += sale.quantity;
 
     /* ✅ CHECK NEW STOCK */
-    if (product.quantity < quantity) {
+    if (product.productQuantity < quantity) {
       return res
         .status(400)
         .json({ error: "Insufficient stock after update" });
     }
 
-    product.quantity -= quantity;
+    product.productQuantity -= quantity;
 
     /* ✅ ROLLBACK */
     if (sale.paymentType === "partial") {
@@ -279,7 +279,7 @@ export const deleteSales = async (req, res) => {
     const product = await Product.findById(sale.productId);
 
     if (product) {
-      product.quantity += sale.quantity;
+      product.productQuantity += sale.quantity;
       await product.save();
     }
 
