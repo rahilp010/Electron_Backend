@@ -21,20 +21,6 @@ const getLedgerByAccount = async (req, res) => {
   }
 };
 
-export const getClientLedger = async (req, res) => {
-  try {
-    const { clientId } = req.params;
-
-    const ledger = await Ledger.find({ clientId })
-      .sort({ date: 1, createdAt: 1 });
-
-    res.status(200).json(ledger);
-  } catch (error) {
-    console.error('❌ Error fetching ledger:', error);
-    res.status(500).json({ error: 'Failed to fetch ledger' });
-  }
-};
-
 
 /* ================= ADD LEDGER ENTRY ================= */
 const addLedgerEntry = async (req, res) => {
@@ -93,28 +79,31 @@ const addLedgerEntry = async (req, res) => {
   }
 };
 
-const getTransferHistory = async (req, res) => {
+export const getTransferHistory = async (req, res) => {
   try {
     const { accountId } = req.query;
 
-    if (!accountId) {
-      return res.status(400).json({ error: 'accountId is required' });
+    const filter = {
+      referenceType: 'Transfer',
+    };
+
+    // OPTIONAL: filter by account if provided
+    if (accountId) {
+      filter.accountId = accountId;
     }
 
-    const history = await Ledger.find({
-      accountId,
-      referenceType: 'Transfer',
-    })
-      .sort({ createdAt: -1 })
+    const history = await Ledger.find(filter)
+      .populate('accountId', 'accountName')
       .populate('clientId', 'clientName')
-      .lean();
+      .sort({ date: -1, createdAt: -1 });
 
     res.status(200).json(history);
   } catch (error) {
-    console.error('❌ Transfer history error:', error);
+    console.error('❌ Error fetching transfer history:', error);
     res.status(500).json({ error: 'Failed to fetch transfer history' });
   }
-}
+};
+
 
 /* ================= DELETE LEDGER ENTRY (SAFE) ================= */
 const deleteLedgerEntry = async (req, res) => {
