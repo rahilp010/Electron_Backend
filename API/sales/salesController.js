@@ -334,7 +334,7 @@ export const deleteSales = async (req, res) => {
         accountId: client.accountId,
         amount: totalAmount,
         entryType: "debit", // reversing purchase credit
-        referenceType: "Sales Deleted",
+        referenceType: "Sales",
         referenceId: sale._id,
         narration: `Sales deleted`,
         date: new Date(),
