@@ -2,6 +2,7 @@ import Purchase from "./purchaseSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
 import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
+import updateProductStock from "../utils/updateProductStock.js";
 
 /* ========================= GET ALL ========================= */
 export const getAllPurchases = async (req, res) => {
@@ -74,8 +75,8 @@ export const createPurchase = async (req, res) => {
     }
 
     /* ✅ STOCK UPDATE */
-    product.productQuantity += Number(quantity);
-    await product.save();
+    // product.productQuantity += Number(quantity);
+    // await product.save();
 
     const totalAmount = purchaseAmount * quantity;
 
@@ -115,6 +116,8 @@ export const createPurchase = async (req, res) => {
       date,
       pageName: "Purchase",
     });
+
+    await updateProductStock(product, quantity, pageName = "Purchase", totalAmountWithTax, totalAmountWithoutTax)
 
     await addClientLedgerEntry({
       clientId: client._id,

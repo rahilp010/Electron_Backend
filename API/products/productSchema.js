@@ -8,6 +8,12 @@ const productSchema = new mongoose.Schema(
         clientName: { type: String, index: true },
         assetType: { type: String, index: true },
         saleHSN: { type: String },
+        transactionType: {
+            type: String,
+            enum: ['purchase', 'sale'],
+            required: true,
+            index: true,
+        },
         purchaseHSN: { type: String },
         taxRate: { type: Number },
         taxAmount: { type: Number },
