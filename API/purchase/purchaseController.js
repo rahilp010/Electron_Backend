@@ -61,6 +61,7 @@ export const createPurchase = async (req, res) => {
       dueDate,
       description,
       date,
+      pageName
     } = req.body;
 
     if (!clientId || !productId || !quantity || !purchaseAmount) {
@@ -117,7 +118,7 @@ export const createPurchase = async (req, res) => {
       pageName: "Purchase",
     });
 
-    await updateProductStock(product, quantity, pageName = "Purchase", totalAmountWithTax, totalAmountWithoutTax)
+    await updateProductStock(product, quantity, pageName, totalAmountWithTax, totalAmountWithoutTax)
 
     await addClientLedgerEntry({
       clientId: client._id,
@@ -165,7 +166,7 @@ export const updatePurchase = async (req, res) => {
       billNo,
       date,
       dueDate,
-      description,
+      description
     } = req.body;
 
     const purchase = await Purchase.findById(id);
