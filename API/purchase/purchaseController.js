@@ -119,6 +119,7 @@ export const createPurchase = async (req, res) => {
     });
 
     await updateProductStock(product, quantity, pageName, totalAmountWithTax, totalAmountWithoutTax)
+    await product.save()
 
     await addClientLedgerEntry({
       clientId: client._id,

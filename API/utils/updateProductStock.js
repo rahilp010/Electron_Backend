@@ -21,8 +21,6 @@ const updateProductStock = async ({ product, quantity, pageName, totalAmountWith
             product.totalAmountWithoutTax = totalAmountWithoutTax
         }
     }
-
-    await product.save();
 };
 
 export default updateProductStock
