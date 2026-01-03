@@ -53,9 +53,6 @@ export const getPurchaseById = async (req, res) => {
 /* ========================= CREATE ========================= */
 export const createPurchase = async (req, res) => {
 
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
   try {
     const {
       clientId,
@@ -92,8 +89,8 @@ export const createPurchase = async (req, res) => {
     const grandTotal = subtotal + taxAmount + freightTotal;
 
     const [client, product] = await Promise.all([
-      Client.findById(clientId).session(session),
-      Product.findById(productId).session(session),
+      Client.findById(clientId),
+      Product.findById(productId),
     ]);
 
 
@@ -111,7 +108,6 @@ export const createPurchase = async (req, res) => {
           totalAmountWithTax: grandTotal,
         },
       },
-      { session }
     );
 
     const clientUpdate =
@@ -129,7 +125,6 @@ export const createPurchase = async (req, res) => {
     await Client.updateOne(
       { _id: clientId },
       clientUpdate,
-      { session }
     );
 
     const [purchase] = await Purchase.create([{
@@ -155,10 +150,8 @@ export const createPurchase = async (req, res) => {
       description,
       date,
       pageName: "Purchase",
-    },], { session });
+    },]);
 
-    await session.commitTransaction();
-    session.endSession();
     res.status(201).json(purchase);
 
     await addClientLedgerEntry({
@@ -173,10 +166,6 @@ export const createPurchase = async (req, res) => {
     });
 
   } catch (error) {
-
-    await session.abortTransaction();
-    session.endSession();
-
     console.error("❌ Error creating purchase:", error);
     res.status(500).json({ error: "Failed to create purchase" });
   }
@@ -187,9 +176,6 @@ export const createPurchase = async (req, res) => {
 /* ========================= UPDATE ========================= */
 export const updatePurchase = async (req, res) => {
   try {
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
     const { id } = req.params;
     const {
       clientId,
@@ -209,7 +195,7 @@ export const updatePurchase = async (req, res) => {
       description
     } = req.body;
 
-    const oldPurchase = await Purchase.findById(id).session(session);
+    const oldPurchase = await Purchase.findById(id);
     if (!oldPurchase)
       return res.status(404).json({ error: "Purchase not found" });
 
@@ -239,7 +225,6 @@ export const updatePurchase = async (req, res) => {
           taxAmount: -oldPurchase.taxAmount,
         },
       },
-      { session }
     );
 
     await Product.updateOne(
@@ -252,7 +237,6 @@ export const updatePurchase = async (req, res) => {
           totalAmountWithTax: newGrandTotal,
         },
       },
-      { session }
     );
 
     const oldClientUpdate =
@@ -270,7 +254,6 @@ export const updatePurchase = async (req, res) => {
     await Client.updateOne(
       { _id: oldPurchase.clientId },
       oldClientUpdate,
-      { session }
     );
 
     const newClientUpdate =
@@ -288,7 +271,6 @@ export const updatePurchase = async (req, res) => {
     await Client.updateOne(
       { _id: clientId },
       newClientUpdate,
-      { session }
     );
 
     await Purchase.updateOne(
@@ -315,11 +297,7 @@ export const updatePurchase = async (req, res) => {
           description,
         },
       },
-      { session }
     );
-
-    await session.commitTransaction();
-    session.endSession();
 
     res.status(200).json({ message: "Purchase updated successfully" });
 
