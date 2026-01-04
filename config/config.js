@@ -12,7 +12,11 @@ const _config = {
     cloudinaryApiKey: process.env.CLOUDINARY_API_KEY,
     cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET,
     apiBase: process.env.ELECTRON_APP_API_BASE,
-    url: process.env.UPDATE_SERVER_URL
+    url: process.env.UPDATE_SERVER_URL,
+    cashAccountId: process.env.CASH_ACCOUNT_ID,
+    bankAccountId: process.env.BANK_ACCOUNT_ID,
+    cashClientId: process.env.CASH_CLIENT_ID,
+    bankClientId: process.env.BANK_CLIENT_ID,
 }
 
 export const config = Object.freeze(_config)

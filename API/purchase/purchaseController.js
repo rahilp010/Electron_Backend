@@ -4,6 +4,7 @@ import Product from "../products/productSchema.js";
 import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
 import updateProductStock from "../utils/updateProductStock.js";
 import mongoose from "mongoose";
+import { config } from '../../config/config.js';
 
 /* ========================= GET ALL ========================= */
 export const getAllPurchases = async (req, res) => {
@@ -171,9 +172,20 @@ export const createPurchase = async (req, res) => {
       referenceId: purchase._id,
       narration: `Purchase ${product.productName} × ${qty}`,
       date,
-    }, {
-      clientId: "695a0e53a31c4b044118d304",
-      accountId: "695a0e54a31c4b044118d307",
+    }).catch(console.error);
+
+    const systemAccountId =
+      paymentMethod === "cash"
+        ? config.cashAccountId  // Cash Account ID
+        : config.bankAccountId; // Bank Account ID
+
+    const systemClientId = paymentMethod === "cash"
+      ? config.cashClientId // Cash Client ID
+      : config.bankClientId; // Bank Client ID
+
+    addClientLedgerEntry({
+      clientId: systemClientId,
+      accountId: systemAccountId,
       amount: grandTotal,
       entryType: "debit",
       referenceType: "Purchase",
