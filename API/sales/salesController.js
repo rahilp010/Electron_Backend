@@ -214,6 +214,7 @@ export const updateSales = async (req, res) => {
       date,
       dueDate,
       description,
+      paymentMethod
     } = req.body;
 
     const oldSale = await Sales.findById(id);
@@ -304,22 +305,23 @@ export const updateSales = async (req, res) => {
       {
         clientId,
         productId,
-        quantity,
-        saleAmount,
+        quantity: newQty,
+        saleAmount: newPrice,
         statusOfTransaction,
         paymentType,
         pendingAmount,
         paidAmount,
         taxRate,
-        taxAmount: tax,
-        totalAmountWithoutTax: subtotal,
-        totalAmountWithTax: grandTotal,
+        taxAmount,
+        totalAmountWithoutTax: newSubtotal,
+        totalAmountWithTax: newGrandTotal,
         freightCharges,
         freightTaxAmount,
         billNo,
         date,
         dueDate,
         description,
+        paymentMethod
       },
       { new: true }
     )
@@ -343,11 +345,11 @@ export const updateSales = async (req, res) => {
     }
 
     const systemAccountId =
-      paymentMethod === "cash"
+      paymentMethod === "Cash"
         ? config.cashAccountId  // Cash Account ID
         : config.bankAccountId; // Bank Account ID
 
-    const systemClientId = paymentMethod === "cash"
+    const systemClientId = paymentMethod === "Cash"
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 
@@ -422,11 +424,11 @@ export const deleteSales = async (req, res) => {
     }
 
     const systemAccountId =
-      paymentMethod === "cash"
+      sale.paymentMethod === "Cash"
         ? config.cashAccountId  // Cash Account ID
         : config.bankAccountId; // Bank Account ID
 
-    const systemClientId = paymentMethod === "cash"
+    const systemClientId = sale.paymentMethod === "Cash"
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 

@@ -175,11 +175,11 @@ export const createPurchase = async (req, res) => {
     }).catch(console.error);
 
     const systemAccountId =
-      paymentMethod === "cash"
+      paymentMethod === "Cash"
         ? config.cashAccountId  // Cash Account ID
         : config.bankAccountId; // Bank Account ID
 
-    const systemClientId = paymentMethod === "cash"
+    const systemClientId = paymentMethod === "Cash"
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 
@@ -220,6 +220,7 @@ export const updatePurchase = async (req, res) => {
       date,
       dueDate,
       description,
+      paymentMethod
     } = req.body;
 
     const oldPurchase = await Purchase.findById(id);
@@ -326,6 +327,7 @@ export const updatePurchase = async (req, res) => {
         date,
         dueDate,
         description,
+        paymentMethod
       },
       { new: true }
     )
@@ -349,11 +351,11 @@ export const updatePurchase = async (req, res) => {
     }
 
     const systemAccountId =
-      paymentMethod === "cash"
+      paymentMethod === "Cash"
         ? config.cashAccountId  // Cash Account ID
         : config.bankAccountId; // Bank Account ID
 
-    const systemClientId = paymentMethod === "cash"
+    const systemClientId = paymentMethod === "Cash"
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 
@@ -430,11 +432,11 @@ export const deletePurchase = async (req, res) => {
     }
 
     const systemAccountId =
-      paymentMethod === "cash"
+      purchase.paymentMethod === "Cash"
         ? config.cashAccountId  // Cash Account ID
         : config.bankAccountId; // Bank Account ID
 
-    const systemClientId = paymentMethod === "cash"
+    const systemClientId = purchase.paymentMethod === "Cash"
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 

@@ -11,8 +11,8 @@ const saleSchema = new mongoose.Schema(
         isMultiProduct: { type: Boolean, default: false },
         paymentMethod: {
             type: String,
-            enum: ['cash', 'bank'],
-            default: 'bank'
+            enum: ['Cash', 'Bank'],
+            default: 'Bank'
         },
         statusOfTransaction: {
             type: String,
