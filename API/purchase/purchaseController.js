@@ -2,9 +2,17 @@ import Purchase from "./purchaseSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
 import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
-import updateProductStock from "../utils/updateProductStock.js";
 import mongoose from "mongoose";
 import { config } from '../../config/config.js';
+
+const systemAccountId =
+  paymentMethod === "cash"
+    ? config.cashAccountId  // Cash Account ID
+    : config.bankAccountId; // Bank Account ID
+
+const systemClientId = paymentMethod === "cash"
+  ? config.cashClientId // Cash Client ID
+  : config.bankClientId; // Bank Client ID
 
 /* ========================= GET ALL ========================= */
 export const getAllPurchases = async (req, res) => {
@@ -174,15 +182,6 @@ export const createPurchase = async (req, res) => {
       date,
     }).catch(console.error);
 
-    const systemAccountId =
-      paymentMethod === "cash"
-        ? config.cashAccountId  // Cash Account ID
-        : config.bankAccountId; // Bank Account ID
-
-    const systemClientId = paymentMethod === "cash"
-      ? config.cashClientId // Cash Client ID
-      : config.bankClientId; // Bank Client ID
-
     addClientLedgerEntry({
       clientId: systemClientId,
       accountId: systemAccountId,
@@ -347,6 +346,18 @@ export const updatePurchase = async (req, res) => {
         date,
       }).catch(console.error);
     }
+    if (difference !== 0) {
+      addClientLedgerEntry({
+        clientId: systemClientId,
+        accountId: systemAccountId,
+        amount: Math.abs(difference),
+        entryType: difference > 0 ? "debit" : "credit",
+        referenceType: "Purchase Adjustment",
+        referenceId: id,
+        narration: "Purchase updated adjustment",
+        date,
+      }).catch(console.error);
+    }
 
     /* ✅ IMPORTANT: RETURN UPDATED DOCUMENT */
     res.status(200).json(updatedPurchase);
@@ -406,7 +417,18 @@ export const deletePurchase = async (req, res) => {
         date: new Date(),
       });
     }
-
+    if (client) {
+      await addClientLedgerEntry({
+        clientId: systemClientId,
+        accountId: systemAccountId,
+        amount: totalAmount,
+        entryType: "credit", // reversing purchase debit
+        referenceType: "Purchase",
+        referenceId: purchase._id,
+        narration: `Purchase deleted`,
+        date: new Date(),
+      }).catch(console.error);
+    }
     await Purchase.findByIdAndDelete(id);
 
     res.status(200).json({
