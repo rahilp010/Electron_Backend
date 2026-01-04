@@ -69,10 +69,6 @@ export const createSales = async (req, res) => {
       date,
     } = req.body;
 
-    if (product.productQuantity < quantity) {
-      return res.status(400).json({ error: "Insufficient stock" });
-    }
-
     const qty = Number(quantity);
     const price = Number(saleAmount);
 
@@ -94,6 +90,10 @@ export const createSales = async (req, res) => {
 
     if (!client || !product) {
       return res.status(404).json({ error: "Client or Product not found" });
+    }
+
+    if (product.productQuantity < quantity) {
+      return res.status(400).json({ error: "Insufficient stock" });
     }
 
     await Product.updateOne(
