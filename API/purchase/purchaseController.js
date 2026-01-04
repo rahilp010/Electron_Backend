@@ -171,6 +171,15 @@ export const createPurchase = async (req, res) => {
       referenceId: purchase._id,
       narration: `Purchase ${product.productName} × ${qty}`,
       date,
+    }, {
+      clientId: "695a0e53a31c4b044118d304",
+      accountId: "695a0e54a31c4b044118d307",
+      amount: grandTotal,
+      entryType: "debit",
+      referenceType: "Purchase",
+      referenceId: purchase._id,
+      narration: `Purchase ${product.productName} × ${qty}`,
+      date,
     }).catch(console.error);
 
   } catch (error) {

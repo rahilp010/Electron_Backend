@@ -2,9 +2,13 @@ import mongoose from "mongoose";
 
 const accountSchema = new mongoose.Schema(
     {
-        clientId: { type: mongoose.Schema.Types.ObjectId, ref: "Client" },
+        clientId: {
+            type: mongoose.Schema.Types.ObjectId, ref: "Client", unique: true,
+            sparse: true,
+        },
         accountName: { type: String, required: true },
         accountType: { type: String, enum: ['Creditor', 'Debtor'], required: true },
+        type: { type: String, enum: ['Bank', 'Cash', 'Client'], required: true },
         openingBalance: { type: Number, default: 0 },
         currentBalance: { type: Number, default: 0 },
         bankName: { type: String, index: true },
