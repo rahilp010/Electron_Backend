@@ -12,6 +12,8 @@ const addClientLedgerEntry = async ({
     narration,
 }) => {
     const account = await Account.findById(accountId);
+    console.log("account", account);
+
     if (!account) throw new Error('Account not found');
 
     let newBalance = account.currentBalance;
@@ -32,6 +34,8 @@ const addClientLedgerEntry = async ({
         referenceId,
         narration,
     });
+
+    console.log("New Balance After", newBalance);
 
     account.currentBalance = newBalance;
     await account.save();
