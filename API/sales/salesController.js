@@ -5,15 +5,6 @@ import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
 
 import { config } from '../../config/config.js';
 
-const systemAccountId =
-  paymentMethod === "cash"
-    ? config.cashAccountId  // Cash Account ID
-    : config.bankAccountId; // Bank Account ID
-
-const systemClientId = paymentMethod === "cash"
-  ? config.cashClientId // Cash Client ID
-  : config.bankClientId; // Bank Client ID
-
 /* ========================= GET ALL ========================= */
 export const getAllSales = async (req, res) => {
   try {
@@ -175,6 +166,15 @@ export const createSales = async (req, res) => {
       narration: `Sales ${product.productName} × ${qty}`,
       date,
     }).catch(console.error);
+
+    const systemAccountId =
+      paymentMethod === "cash"
+        ? config.cashAccountId  // Cash Account ID
+        : config.bankAccountId; // Bank Account ID
+
+    const systemClientId = paymentMethod === "cash"
+      ? config.cashClientId // Cash Client ID
+      : config.bankClientId; // Bank Client ID
 
     addClientLedgerEntry({
       clientId: systemClientId,
@@ -342,6 +342,15 @@ export const updateSales = async (req, res) => {
       }).catch(console.error);
     }
 
+    const systemAccountId =
+      paymentMethod === "cash"
+        ? config.cashAccountId  // Cash Account ID
+        : config.bankAccountId; // Bank Account ID
+
+    const systemClientId = paymentMethod === "cash"
+      ? config.cashClientId // Cash Client ID
+      : config.bankClientId; // Bank Client ID
+
     if (difference !== 0) {
       addClientLedgerEntry({
         clientId: systemClientId,
@@ -411,6 +420,16 @@ export const deleteSales = async (req, res) => {
         date: new Date(),
       });
     }
+
+    const systemAccountId =
+      paymentMethod === "cash"
+        ? config.cashAccountId  // Cash Account ID
+        : config.bankAccountId; // Bank Account ID
+
+    const systemClientId = paymentMethod === "cash"
+      ? config.cashClientId // Cash Client ID
+      : config.bankClientId; // Bank Client ID
+
     if (client) {
       await addClientLedgerEntry({
         clientId: systemClientId,
