@@ -282,20 +282,34 @@ export const updateSales = async (req, res) => {
     ]);
 
     /* ================= CLIENT BALANCE ================= */
-    const rollbackClientUpdate =
-      oldSale.paymentType === "partial"
-        ? {
-          pendingAmount: -oldSale.pendingAmount,
-          paidAmount: -oldSale.paidAmount,
-        }
-        : oldSale.statusOfTransaction === "completed"
-          ? { paidAmount: -oldGrandTotal }
-          : { pendingAmount: -oldGrandTotal };
+    let rollbackClientUpdate = {};
+
+    if (oldSale.paymentType === "partial") {
+      const oldPaid = Math.max(0, Number(oldSale.paidAmount || 0));
+      const oldPending = Math.max(0, oldGrandTotal - oldPaid);
+
+      rollbackClientUpdate = {
+        paidAmount: -oldPaid,
+        pendingAmount: -oldPending,
+      };
+    }
+    else if (oldSale.statusOfTransaction === "completed") {
+      rollbackClientUpdate = {
+        paidAmount: -oldGrandTotal,
+      };
+    }
+    else {
+      rollbackClientUpdate = {
+        pendingAmount: -oldGrandTotal,
+      };
+    }
+
+
 
     let applyClientUpdate = {};
 
     if (paymentType === "partial") {
-      const paid = Math.max(0, Number(paidAmount));
+      const paid = Math.max(0, Number(paidAmount || 0));
       const pending = Math.max(0, newGrandTotal - paid);
 
       applyClientUpdate = {
@@ -314,7 +328,6 @@ export const updateSales = async (req, res) => {
       };
     }
 
-
     await Client.bulkWrite([
       {
         updateOne: {
@@ -329,7 +342,6 @@ export const updateSales = async (req, res) => {
         },
       },
     ]);
-
 
     const updatedSale = await Sales.findByIdAndUpdate(
       id,
