@@ -4,6 +4,8 @@ import Product from "../products/productSchema.js";
 import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
 import mongoose from "mongoose";
 import { config } from '../../config/config.js';
+import { updateClientBalances } from "../utils/updateClientBalances.js";
+import { calculateTotals } from "../utils/calculateTotals.js";
 
 
 /* ========================= GET ALL ========================= */
@@ -37,8 +39,8 @@ export const getPurchaseById = async (req, res) => {
     }
 
     const purchase = await Purchase.findById(id)
-      .populate("clientId")
-      .populate("productId")
+      .populate("clientId", "clientName")
+      .populate("productId", "productName")
       .lean()
 
     if (!purchase)
@@ -86,11 +88,7 @@ export const createPurchase = async (req, res) => {
       return res.status(400).json({ error: "Invalid quantity or price" });
     }
 
-    const subtotal = price * qty;
-    const taxAmount = (subtotal * Number(taxRate)) / 100;
-    const freightTotal =
-      Number(freightCharges) + Number(freightTaxAmount);
-    const grandTotal = subtotal + taxAmount + freightTotal;
+    const { subtotal, taxAmount, grandTotal } = calculateTotals(req.body)
 
     const [client, product] = await Promise.all([
       Client.findById(clientId).lean(),
@@ -108,67 +106,38 @@ export const createPurchase = async (req, res) => {
         $inc: {
           productQuantity: qty,
           totalAmountWithoutTax: subtotal,
-          taxAmount,
+          taxAmount: taxAmount,
           totalAmountWithTax: grandTotal,
         },
       }
     );
 
-    /* ================= CLIENT UPDATE ================= */
-    const clientUpdate =
-      paymentType === "partial"
-        ? {
-          $inc: {
-            pendingAmount: Number(pendingAmount),
-            paidAmount: Number(paidAmount),
-          },
-        }
-        : statusOfTransaction === "completed"
-          ? { $inc: { paidAmount: grandTotal } }
-          : { $inc: { pendingAmount: grandTotal } };
-
-    await Client.updateOne({ _id: clientId }, clientUpdate);
-
-    /* ================= CREATE PURCHASE ================= */
     const purchase = await Purchase.create({
-      clientId,
-      productId,
+      ...req.body,
       quantity: qty,
       purchaseAmount: price,
-      statusOfTransaction,
-      paymentType,
-      pendingAmount,
-      paidAmount,
-      pendingFromOurs,
-      taxRate,
       taxAmount,
-      freightCharges,
-      freightTaxAmount,
       totalAmountWithoutTax: subtotal,
       totalAmountWithTax: grandTotal,
-      paymentMethod,
-      methodType,
-      billNo,
-      dueDate,
-      description,
-      date,
-      pageName: "Purchase",
-    });
+      transactionType: 'Payment',
+      pageName: 'Purchase',
+    })
 
-    /* ✅ RETURN POPULATED DOC */
-    const fullPurchase = await Purchase.findById(purchase._id)
+    const populatedPurchase = await Purchase.findById(purchase._id)
       .populate("clientId")
-      .populate("productId");
+      .populate("productId")
 
-    res.status(201).json(fullPurchase);
+    await updateClientBalances(clientId, purchase, 'apply')
 
-    /* ================= LEDGER (NON-BLOCKING) ================= */
-    addClientLedgerEntry({
+    res.status(201).json(populatedPurchase)
+
+    /* LEDGER */
+    await addClientLedgerEntry({
       clientId: client._id,
       accountId: client.accountId,
       amount: grandTotal,
-      entryType: "credit",
-      referenceType: "Purchase",
+      entryType: 'credit',
+      referenceType: 'Purchase',
       referenceId: purchase._id,
       narration: `Purchase ${product.productName} × ${qty}`,
       date,
@@ -183,7 +152,7 @@ export const createPurchase = async (req, res) => {
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 
-    addClientLedgerEntry({
+    await addClientLedgerEntry({
       clientId: systemClientId,
       accountId: systemAccountId,
       amount: grandTotal,
@@ -227,112 +196,70 @@ export const updatePurchase = async (req, res) => {
     if (!oldPurchase)
       return res.status(404).json({ error: "Purchase not found" });
 
-    const oldQty = oldPurchase.quantity;
-    const oldSubtotal = oldPurchase.totalAmountWithoutTax;
-    const oldGrandTotal = oldPurchase.totalAmountWithTax;
+    /* ================= TOTALS ================= */
+    const oldGrandTotal = oldPurchase.totalAmountWithTax
 
-    const newQty = Number(quantity);
-    const newPrice = Number(purchaseAmount);
+    const {
+      subtotal,
+      taxAmount,
+      grandTotal: newGrandTotal,
+    } = calculateTotals(req.body)
 
-    const newSubtotal = newQty * newPrice;
-    const taxAmount = (newSubtotal * taxRate) / 100;
-    const freightTotal = Number(freightCharges) + Number(freightTaxAmount);
-    const newGrandTotal = newSubtotal + taxAmount + freightTotal;
+    /* ================= CLIENT ================= */
+    const client = await Client.findById(oldPurchase.clientId)
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' })
+    }
 
-    /* ================= PRODUCT STOCK ================= */
-    await Product.bulkWrite([
+    /* ================= PRODUCT ROLLBACK ================= */
+    await Product.updateOne(
+      { _id: oldPurchase.productId },
       {
-        updateOne: {
-          filter: { _id: oldPurchase.productId },
-          update: {
-            $inc: {
-              productQuantity: -oldQty,
-              totalAmountWithoutTax: -oldSubtotal,
-              totalAmountWithTax: -oldGrandTotal,
-              taxAmount: -oldPurchase.taxAmount,
-            },
-          },
+        $inc: {
+          productQuantity: oldPurchase.quantity,
+          totalAmountWithoutTax: oldPurchase.totalAmountWithoutTax,
+          taxAmount: oldPurchase.taxAmount,
+          totalAmountWithTax: oldPurchase.totalAmountWithTax,
         },
-      },
-      {
-        updateOne: {
-          filter: { _id: productId },
-          update: {
-            $inc: {
-              productQuantity: newQty,
-              totalAmountWithoutTax: newSubtotal,
-              taxAmount,
-              totalAmountWithTax: newGrandTotal,
-            },
-          },
-        },
-      },
-    ]);
+      }
+    )
 
-    /* ================= CLIENT BALANCE ================= */
-    const rollbackClientUpdate =
-      oldPurchase.paymentType === "partial"
-        ? {
-          pendingAmount: -oldPurchase.pendingAmount,
-          paidAmount: -oldPurchase.paidAmount,
-        }
-        : oldPurchase.statusOfTransaction === "completed"
-          ? { paidAmount: -oldGrandTotal }
-          : { pendingAmount: -oldGrandTotal };
+    /* ================= CLIENT ROLLBACK ================= */
+    await updateClientBalances(oldPurchase.clientId, oldPurchase, 'rollback')
 
-    const applyClientUpdate =
-      paymentType === "partial"
-        ? {
-          pendingAmount: Number(pendingAmount),
-          paidAmount: Number(paidAmount),
-        }
-        : statusOfTransaction === "completed"
-          ? { paidAmount: newGrandTotal }
-          : { pendingAmount: newGrandTotal };
-
-    await Client.bulkWrite([
-      {
-        updateOne: {
-          filter: { _id: oldPurchase.clientId },
-          update: { $inc: rollbackClientUpdate },
-        },
-      },
-      {
-        updateOne: {
-          filter: { _id: clientId },
-          update: { $inc: applyClientUpdate },
-        },
-      },
-    ]);
-
-    /* ================= UPDATE PURCHASE ================= */
+    /* ================= UPDATE SALE ================= */
     const updatedPurchase = await Purchase.findByIdAndUpdate(
       id,
       {
-        clientId,
-        productId,
-        quantity: newQty,
-        purchaseAmount: newPrice,
-        statusOfTransaction,
-        paymentType,
-        pendingAmount,
-        paidAmount,
-        taxRate,
+        ...req.body,
+        quantity: Number(req.body.quantity),
+        saleAmount: Number(req.body.saleAmount),
         taxAmount,
-        freightCharges,
-        freightTaxAmount,
-        totalAmountWithoutTax: newSubtotal,
+        totalAmountWithoutTax: subtotal,
         totalAmountWithTax: newGrandTotal,
-        billNo,
-        date,
-        dueDate,
-        description,
-        paymentMethod
       },
       { new: true }
     )
-      .populate("clientId")
-      .populate("productId");
+
+    /* ================= PRODUCT APPLY ================= */
+    await Product.updateOne(
+      { _id: updatedPurchase.productId },
+      {
+        $inc: {
+          productQuantity: -updatedPurchase.quantity,
+          totalAmountWithoutTax: -subtotal,
+          taxAmount: -taxAmount,
+          totalAmountWithTax: -newGrandTotal,
+        },
+      }
+    )
+
+    /* ================= CLIENT APPLY ================= */
+    await updateClientBalances(
+      updatedPurchase.clientId,
+      updatedPurchase,
+      'apply'
+    )
 
     /* ================= LEDGER ADJUSTMENT ================= */
     const difference = newGrandTotal - oldGrandTotal;
@@ -372,8 +299,12 @@ export const updatePurchase = async (req, res) => {
       }).catch(console.error);
     }
 
-    /* ✅ IMPORTANT: RETURN UPDATED DOCUMENT */
-    res.status(200).json(updatedPurchase);
+    /* ================= RESPONSE ================= */
+    const populatedPurchase = await Purchase.findById(updatedPurchase._id)
+      .populate('clientId')
+      .populate('productId')
+
+    res.status(200).json(populatedPurchase)
 
   } catch (error) {
     console.error("❌ Error updating purchase:", error);
@@ -392,31 +323,26 @@ export const deletePurchase = async (req, res) => {
       return res.status(404).json({ error: "Purchase not found" });
     }
 
+    /* CLIENT */
+    await updateClientBalances(purchase.clientId, purchase, 'rollback')
+
+    /* PRODUCT */
+    await Product.updateOne(
+      { _id: purchase.productId },
+      {
+        $inc: {
+          productQuantity: purchase.quantity,
+          totalAmountWithoutTax: purchase.totalAmountWithoutTax,
+          taxAmount: purchase.taxAmount,
+          totalAmountWithTax: purchase.totalAmountWithTax,
+        },
+      }
+    )
+
     const client = await Client.findById(purchase.clientId);
-    const product = await Product.findById(purchase.productId);
 
     const totalAmount =
       purchase.totalAmountWithTax || purchase.totalAmountWithoutTax;
-
-    if (product) {
-      product.productQuantity -= purchase.quantity;
-      product.totalAmountWithTax -= purchase.totalAmountWithTax;
-      product.totalAmountWithoutTax -= purchase.totalAmountWithoutTax;
-      await product.save();
-    }
-
-    if (client) {
-      if (purchase.paymentType === "partial") {
-        client.pendingAmount -= purchase.pendingAmount;
-        client.paidAmount -= purchase.paidAmount;
-      } else if (purchase.statusOfTransaction === "completed") {
-        client.paidAmount -= totalAmount;
-      } else {
-        client.pendingAmount -= totalAmount;
-      }
-
-      await client.save();
-    }
 
     if (client) {
       await addClientLedgerEntry({

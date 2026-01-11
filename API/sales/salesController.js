@@ -2,8 +2,10 @@ import Sales from "./salesSchema.js";
 import Client from "../clients/clientSchema.js";
 import Product from "../products/productSchema.js";
 import addClientLedgerEntry from "../utils/addClientLedgerEntry.js";
-
 import { config } from '../../config/config.js';
+import { updateClientBalances } from "../utils/updateClientBalances.js";
+import { calculateTotals } from "../utils/calculateTotals.js";
+import mongoose from "mongoose";
 
 /* ========================= GET ALL ========================= */
 export const getAllSales = async (req, res) => {
@@ -30,6 +32,11 @@ export const getAllSales = async (req, res) => {
 export const getSalesById = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: "Invalid purchase ID" });
+    }
+
     const sale = await Sales.findById(id)
       .populate("clientId", "clientName")
       .populate("productId", "productName")
@@ -53,169 +60,122 @@ export const createSales = async (req, res) => {
       productId,
       quantity,
       saleAmount,
-      statusOfTransaction,
       paymentType,
-      pendingAmount = 0,
-      paidAmount = 0,
-      pendingFromOurs = 0,
+      statusOfTransaction,
       taxRate = 0,
       freightCharges = 0,
       freightTaxAmount = 0,
+      paidAmount = 0,
+      pendingAmount = 0,
       paymentMethod,
-      methodType,
       billNo,
       dueDate,
       description,
+      methodType,
       date,
-    } = req.body;
+    } = req.body
 
-    const qty = Number(quantity);
-    const price = Number(saleAmount);
-
-    if (qty <= 0 || price <= 0) {
-      return res.status(400).json({ error: "Invalid quantity or price" });
+    if (!clientId || !productId || !quantity || !saleAmount) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const subtotal = price * qty;
-    const taxAmount = (subtotal * Number(taxRate)) / 100;
-    const freightTotal =
-      Number(freightCharges) + Number(freightTaxAmount);
+    const qty = Number(quantity)
+    const price = Number(saleAmount)
 
-    const grandTotal = subtotal + taxAmount + freightTotal;
+    if (qty <= 0 || price <= 0)
+      return res.status(400).json({ error: 'Invalid quantity or price' })
+
+    const { subtotal, taxAmount, grandTotal } = calculateTotals(req.body)
 
     const [client, product] = await Promise.all([
       Client.findById(clientId).lean(),
       Product.findById(productId).lean(),
     ]);
 
-    if (!client || !product) {
-      return res.status(404).json({ error: "Client or Product not found" });
-    }
+    if (!product || !client)
+      return res.status(404).json({ error: 'Client or Product not found' })
 
-    if (product.productQuantity < quantity) {
-      return res.status(400).json({ error: "Insufficient stock" });
-    }
+    if (product.productQuantity < qty)
+      return res.status(400).json({ error: 'Insufficient stock' })
 
+    /* PRODUCT */
     await Product.updateOne(
       { _id: productId },
       {
         $inc: {
           productQuantity: -qty,
           totalAmountWithoutTax: -subtotal,
-          taxAmount: -(taxAmount || 0),
-          totalAmountWithTax: -(grandTotal || 0),
+          taxAmount: -taxAmount,
+          totalAmountWithTax: -grandTotal,
         },
       }
-    );
+    )
 
-    let clientUpdate = {};
-
-    if (paymentType === "partial") {
-      const paid = Math.max(0, Number(paidAmount));
-      const pending = Math.max(0, grandTotal - paid);
-
-      clientUpdate = {
-        $inc: {
-          paidAmount: paid,
-          pendingAmount: pending,
-        },
-      };
-    }
-    else if (statusOfTransaction === "completed") {
-      clientUpdate = {
-        $inc: {
-          paidAmount: grandTotal,
-        },
-      };
-    }
-    else {
-      // pending sale
-      clientUpdate = {
-        $inc: {
-          pendingAmount: grandTotal,
-        },
-      };
-    }
-
-    await Client.updateOne({ _id: clientId }, clientUpdate);
-
-
-    /* ===============================
-       🧾 CREATE SALES
-    ================================ */
+    /* SALES DOC */
     const sale = await Sales.create({
-      clientId,
-      productId,
+      ...req.body,
       quantity: qty,
       saleAmount: price,
-      statusOfTransaction,
-      paymentType,
-      pendingAmount,
-      paidAmount,
-      pendingFromOurs,
-      taxRate,
       taxAmount,
-      freightCharges,
-      freightTaxAmount,
       totalAmountWithoutTax: subtotal,
       totalAmountWithTax: grandTotal,
-      paymentMethod,
-      methodType,
-      billNo,
-      dueDate,
-      description,
-      date,
-      pageName: "Sales",
-    });
+      methodType: 'Receipt',
+      pageName: 'Sales',
+    })
 
-    const fullSales = await Sales.findById(sale._id)
+    const populatedSale = await Sales.findById(sale._id)
       .populate("clientId")
-      .populate("productId");
+      .populate("productId")
 
-    res.status(201).json(fullSales);
+    res.status(201).json(populatedSale)
 
+    /* CLIENT BALANCE */
+    await updateClientBalances(clientId, sale, 'apply')
+
+    /* LEDGER */
     await addClientLedgerEntry({
-      clientId: client._id,
+      clientId,
       accountId: client.accountId,
       amount: grandTotal,
-      entryType: "debit",
-      referenceType: "Sales",
+      entryType: 'debit',
+      referenceType: 'Sales',
       referenceId: sale._id,
       narration: `Sales ${product.productName} × ${qty}`,
       date,
     }).catch(console.error);
 
     const systemAccountId =
-      paymentMethod === "Cash"
-        ? config.cashAccountId  // Cash Account ID
-        : config.bankAccountId; // Bank Account ID
+      paymentMethod === 'Cash'
+        ? config.cashAccountId
+        : config.bankAccountId
 
-    const systemClientId = paymentMethod === "Cash"
-      ? config.cashClientId // Cash Client ID
-      : config.bankClientId; // Bank Client ID
+    const systemClientId =
+      paymentMethod === 'Cash'
+        ? config.cashClientId
+        : config.bankClientId
 
-    addClientLedgerEntry({
+    await addClientLedgerEntry({
       clientId: systemClientId,
       accountId: systemAccountId,
       amount: grandTotal,
-      entryType: "credit",
-      referenceType: "Sales",
+      entryType: 'credit',
+      referenceType: 'Sales',
       referenceId: sale._id,
       narration: `Sales ${product.productName} × ${qty}`,
       date,
     }).catch(console.error);
 
-  } catch (error) {
-    console.error("❌ Error creating sale:", error);
-    res.status(500).json({ error: "Failed to create sale" });
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Failed to create sale' })
   }
-};
-
+}
 
 /* ========================= UPDATE ========================= */
 export const updateSales = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { id } = req.params
+
     const {
       clientId,
       productId,
@@ -223,11 +183,11 @@ export const updateSales = async (req, res) => {
       saleAmount,
       statusOfTransaction,
       paymentType,
-      pendingAmount,
-      paidAmount,
-      taxRate,
-      freightCharges,
-      freightTaxAmount,
+      pendingAmount = 0,
+      paidAmount = 0,
+      taxRate = 0,
+      freightCharges = 0,
+      freightTaxAmount = 0,
       billNo,
       date,
       dueDate,
@@ -235,264 +195,216 @@ export const updateSales = async (req, res) => {
       paymentMethod
     } = req.body;
 
-    const oldSale = await Sales.findById(id);
-    if (!oldSale)
-      return res.status(404).json({ error: "Sales not found" });
+    const oldSale = await Sales.findById(id)
+    if (!oldSale) {
+      return res.status(404).json({ error: 'Sales not found' })
+    }
 
-    const oldQty = oldSale.quantity;
-    const oldSubtotal = oldSale.totalAmountWithoutTax;
-    const oldGrandTotal = oldSale.totalAmountWithTax;
+    /* ================= TOTALS ================= */
+    const oldGrandTotal = oldSale.totalAmountWithTax
 
-    const newQty = Number(quantity);
-    const newPrice = Number(saleAmount);
+    const {
+      subtotal,
+      taxAmount,
+      grandTotal: newGrandTotal,
+    } = calculateTotals(req.body)
 
-    const newSubtotal = newQty * newPrice;
-    const taxAmount = (newSubtotal * taxRate) / 100;
-    const freightTotal = Number(freightCharges) + Number(freightTaxAmount);
-    const newGrandTotal = newSubtotal + taxAmount + freightTotal;
+    /* ================= CLIENT ================= */
+    const client = await Client.findById(oldSale.clientId)
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found' })
+    }
 
-    /* ================= PRODUCT STOCK ================= */
-    await Product.bulkWrite([
+    /* ================= PRODUCT ROLLBACK ================= */
+    await Product.updateOne(
+      { _id: oldSale.productId },
       {
-        updateOne: {
-          filter: { _id: oldSale.productId },
-          update: {
-            $inc: {
-              productQuantity: -oldQty,
-              totalAmountWithoutTax: -oldSubtotal,
-              totalAmountWithTax: -oldGrandTotal,
-              taxAmount: -oldSale.taxAmount,
-            },
-          },
+        $inc: {
+          productQuantity: oldSale.quantity,
+          totalAmountWithoutTax: oldSale.totalAmountWithoutTax,
+          taxAmount: oldSale.taxAmount,
+          totalAmountWithTax: oldSale.totalAmountWithTax,
         },
-      },
-      {
-        updateOne: {
-          filter: { _id: productId },
-          update: {
-            $inc: {
-              productQuantity: newQty,
-              totalAmountWithoutTax: newSubtotal,
-              taxAmount,
-              totalAmountWithTax: newGrandTotal,
-            },
-          },
-        },
-      },
-    ]);
+      }
+    )
 
-    /* ================= CLIENT BALANCE ================= */
-    let rollbackClientUpdate = {};
+    /* ================= CLIENT ROLLBACK ================= */
+    await updateClientBalances(oldSale.clientId, oldSale, 'rollback')
 
-    if (oldSale.paymentType === "partial") {
-      const oldPaid = Math.max(0, Number(oldSale.paidAmount || 0));
-      const oldPending = Math.max(0, oldGrandTotal - oldPaid);
-
-      rollbackClientUpdate = {
-        paidAmount: -oldPaid,
-        pendingAmount: -oldPending,
-      };
-    }
-    else if (oldSale.statusOfTransaction === "completed") {
-      rollbackClientUpdate = {
-        paidAmount: -oldGrandTotal,
-      };
-    }
-    else {
-      rollbackClientUpdate = {
-        pendingAmount: -oldGrandTotal,
-      };
-    }
-
-
-
-    let applyClientUpdate = {};
-
-    if (paymentType === "partial") {
-      const paid = Math.max(0, Number(paidAmount || 0));
-      const pending = Math.max(0, newGrandTotal - paid);
-
-      applyClientUpdate = {
-        paidAmount: paid,
-        pendingAmount: pending,
-      };
-    }
-    else if (statusOfTransaction === "completed") {
-      applyClientUpdate = {
-        paidAmount: newGrandTotal,
-      };
-    }
-    else {
-      applyClientUpdate = {
-        pendingAmount: newGrandTotal,
-      };
-    }
-
-    await Client.bulkWrite([
-      {
-        updateOne: {
-          filter: { _id: oldSale.clientId },
-          update: { $inc: rollbackClientUpdate },
-        },
-      },
-      {
-        updateOne: {
-          filter: { _id: clientId },
-          update: { $inc: applyClientUpdate },
-        },
-      },
-    ]);
-
+    /* ================= UPDATE SALE ================= */
     const updatedSale = await Sales.findByIdAndUpdate(
       id,
       {
-        clientId,
-        productId,
-        quantity: newQty,
-        saleAmount: newPrice,
-        statusOfTransaction,
-        paymentType,
-        pendingAmount,
-        paidAmount,
-        taxRate,
+        ...req.body,
+        quantity: Number(req.body.quantity),
+        saleAmount: Number(req.body.saleAmount),
         taxAmount,
-        totalAmountWithoutTax: newSubtotal,
+        totalAmountWithoutTax: subtotal,
         totalAmountWithTax: newGrandTotal,
-        freightCharges,
-        freightTaxAmount,
-        billNo,
-        date,
-        dueDate,
-        description,
-        paymentMethod
       },
       { new: true }
     )
-      .populate("clientId")
-      .populate("productId");
 
+    /* ================= PRODUCT APPLY ================= */
+    await Product.updateOne(
+      { _id: updatedSale.productId },
+      {
+        $inc: {
+          productQuantity: -updatedSale.quantity,
+          totalAmountWithoutTax: -subtotal,
+          taxAmount: -taxAmount,
+          totalAmountWithTax: -newGrandTotal,
+        },
+      }
+    )
+
+    /* ================= CLIENT APPLY ================= */
+    await updateClientBalances(
+      updatedSale.clientId,
+      updatedSale,
+      'apply'
+    )
 
     /* ================= LEDGER ADJUSTMENT ================= */
-    const difference = newGrandTotal - oldGrandTotal;
+    const difference = newGrandTotal - oldGrandTotal
 
     if (difference !== 0) {
       addClientLedgerEntry({
         clientId,
         accountId: oldSale.accountId,
         amount: Math.abs(difference),
-        entryType: difference > 0 ? 'credit' : 'debit',
-        referenceType: 'Adjustment',
-        referenceId: id,
-        narration: `Sales updated adjustment`,
-      }).catch(console.error);
-    }
-
-    const systemAccountId =
-      paymentMethod === "Cash"
-        ? config.cashAccountId  // Cash Account ID
-        : config.bankAccountId; // Bank Account ID
-
-    const systemClientId = paymentMethod === "Cash"
-      ? config.cashClientId // Cash Client ID
-      : config.bankClientId; // Bank Client ID
-
-    if (difference !== 0) {
-      addClientLedgerEntry({
-        clientId: systemClientId,
-        accountId: systemAccountId,
-        amount: Math.abs(difference),
         entryType: difference > 0 ? 'debit' : 'credit',
         referenceType: 'Adjustment',
         referenceId: id,
-        narration: `Sales updated adjustment`,
+        narration: 'Sales Updated Adjustment',
+        date,
       }).catch(console.error);
     }
 
-    res.status(200).json(updatedSale);
-  } catch (error) {
-    console.error("❌ Error updating sale:", error);
-    res.status(500).json({ error: "Failed to update sale" });
+    const oldSystemAccountId =
+      oldSale.paymentMethod === 'Cash'
+        ? config.cashAccountId
+        : config.bankAccountId
+
+    const oldSystemClientId =
+      oldSale.paymentMethod === 'Cash'
+        ? config.cashClientId
+        : config.bankClientId
+
+    await addClientLedgerEntry({
+      clientId: oldSystemClientId,
+      accountId: oldSystemAccountId,
+      amount: oldSale.totalAmountWithTax,
+      entryType: 'debit',
+      referenceType: 'Adjustment',
+      referenceId: oldSale._id,
+      narration: 'Sales Adjustment Rollback',
+      date: new Date(),
+    })
+
+    const newSystemAccountId =
+      updatedSale.paymentMethod === 'Cash'
+        ? config.cashAccountId
+        : config.bankAccountId
+
+    const newSystemClientId =
+      updatedSale.paymentMethod === 'Cash'
+        ? config.cashClientId
+        : config.bankClientId
+
+    await addClientLedgerEntry({
+      clientId: newSystemClientId,
+      accountId: newSystemAccountId,
+      amount: updatedSale.totalAmountWithTax,
+      entryType: 'credit',
+      referenceType: 'Adjustment',
+      referenceId: updatedSale._id,
+      narration: 'Sales Adjustment Applied',
+      date: new Date(),
+    })
+
+
+    /* ================= RESPONSE ================= */
+    const populatedSale = await Sales.findById(updatedSale._id)
+      .populate('clientId')
+      .populate('productId')
+
+    res.status(200).json(populatedSale)
+
+  } catch (err) {
+    console.error('❌ Update sales error:', err)
+    res.status(500).json({ error: 'Failed to update sale' })
   }
-};
+}
+
 
 /* ========================= DELETE ========================= */
 export const deleteSales = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const sale = await Sales.findById(id);
-    if (!sale) {
-      return res.status(404).json({ error: "Sales not found" });
-    }
+    const sale = await Sales.findById(id)
+    if (!sale)
+      return res.status(404).json({ error: 'Sales not found' })
 
-    const client = await Client.findById(sale.clientId);
-    const product = await Product.findById(sale.productId);
+    /* CLIENT */
+    await updateClientBalances(sale.clientId, sale, 'rollback')
 
-    const totalAmount =
-      sale.totalAmountWithTax || sale.totalAmountWithoutTax;
-
-    if (product) {
-      product.productQuantity += sale.quantity;
-      product.totalAmountWithTax += sale.totalAmountWithTax;
-      product.totalAmountWithoutTax += sale.totalAmountWithoutTax;
-      await product.save();
-    }
-
-    if (client) {
-      const amount = sale.saleAmount * sale.quantity;
-
-      if (sale.paymentType === "partial") {
-        client.pendingAmount -= sale.pendingAmount;
-        client.paidAmount -= sale.paidAmount;
-      } else if (sale.statusOfTransaction === "completed") {
-        client.paidAmount -= amount;
-      } else {
-        client.pendingAmount -= amount;
+    /* PRODUCT */
+    await Product.updateOne(
+      { _id: sale.productId },
+      {
+        $inc: {
+          productQuantity: sale.quantity,
+          totalAmountWithoutTax: sale.totalAmountWithoutTax,
+          taxAmount: sale.taxAmount,
+          totalAmountWithTax: sale.totalAmountWithTax,
+        },
       }
+    )
 
-      await client.save();
-    }
+    const client = await Client.findById(sale.clientId)
 
+    const totalAmount = sale.totalAmountWithTax || sale.totalAmountWithoutTax;
+
+    /* LEDGER */
     if (client) {
       await addClientLedgerEntry({
         clientId: client._id,
         accountId: client.accountId,
         amount: totalAmount,
-        entryType: "credit", // reversing purchase credit
+        entryType: "credit",
         referenceType: "Sales",
         referenceId: sale._id,
-        narration: `Sales deleted`,
+        narration: 'Sales deleted',
         date: new Date(),
       });
     }
 
-    const systemAccountId =
-      sale.paymentMethod === "Cash"
-        ? config.cashAccountId  // Cash Account ID
-        : config.bankAccountId; // Bank Account ID
+    const systemAccountId = sale.paymentMethod === "Cash" ? config.cashAccountId : config.bankAccountId;
 
-    const systemClientId = sale.paymentMethod === "Cash"
-      ? config.cashClientId // Cash Client ID
-      : config.bankClientId; // Bank Client ID
+    const systemClientId = sale.paymentMethod === "Cash" ? config.cashClientId : config.bankClientId;
 
     if (client) {
       await addClientLedgerEntry({
         clientId: systemClientId,
         accountId: systemAccountId,
         amount: totalAmount,
-        entryType: "debit", // reversing purchase debit
+        entryType: "debit",
         referenceType: "Sales",
         referenceId: sale._id,
-        narration: `Sales deleted`,
+        narration: 'Sales deleted',
         date: new Date(),
       }).catch(console.error);
     }
 
-    await Sales.findByIdAndDelete(id);
+    await Sales.findByIdAndDelete(id)
 
-    res.status(200).json({ message: "Sales deleted successfully", id });
+    res.status(200).json({ message: 'Sales deleted successfully', id })
+
   } catch (error) {
-    console.error("❌ Error deleting sale:", error);
-    res.status(500).json({ error: "Failed to delete sale" });
+    console.error("❌ Error deleting sales:", error);
+    res.status(500).json({ error: "Failed to delete sales" });
   }
-};
+}
+
