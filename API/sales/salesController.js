@@ -108,19 +108,37 @@ export const createSales = async (req, res) => {
       }
     );
 
-    const clientUpdate =
-      paymentType === "partial"
-        ? {
-          $inc: {
-            pendingAmount: -Number(pendingAmount),
-            paidAmount: -Number(paidAmount),
-          },
-        }
-        : statusOfTransaction === "completed"
-          ? { $inc: { paidAmount: -grandTotal } }
-          : { $inc: { pendingAmount: -grandTotal } };
+    let clientUpdate = {};
+
+    if (paymentType === "partial") {
+      const paid = Math.max(0, Number(paidAmount));
+      const pending = Math.max(0, grandTotal - paid);
+
+      clientUpdate = {
+        $inc: {
+          paidAmount: paid,
+          pendingAmount: pending,
+        },
+      };
+    }
+    else if (statusOfTransaction === "completed") {
+      clientUpdate = {
+        $inc: {
+          paidAmount: grandTotal,
+        },
+      };
+    }
+    else {
+      // pending sale
+      clientUpdate = {
+        $inc: {
+          pendingAmount: grandTotal,
+        },
+      };
+    }
 
     await Client.updateOne({ _id: clientId }, clientUpdate);
+
 
     /* ===============================
        🧾 CREATE SALES
@@ -274,15 +292,28 @@ export const updateSales = async (req, res) => {
           ? { paidAmount: -oldGrandTotal }
           : { pendingAmount: -oldGrandTotal };
 
-    const applyClientUpdate =
-      paymentType === "partial"
-        ? {
-          pendingAmount: Number(pendingAmount),
-          paidAmount: Number(paidAmount),
-        }
-        : statusOfTransaction === "completed"
-          ? { paidAmount: newGrandTotal }
-          : { pendingAmount: newGrandTotal };
+    let applyClientUpdate = {};
+
+    if (paymentType === "partial") {
+      const paid = Math.max(0, Number(paidAmount));
+      const pending = Math.max(0, newGrandTotal - paid);
+
+      applyClientUpdate = {
+        paidAmount: paid,
+        pendingAmount: pending,
+      };
+    }
+    else if (statusOfTransaction === "completed") {
+      applyClientUpdate = {
+        paidAmount: newGrandTotal,
+      };
+    }
+    else {
+      applyClientUpdate = {
+        pendingAmount: newGrandTotal,
+      };
+    }
+
 
     await Client.bulkWrite([
       {
