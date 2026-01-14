@@ -331,10 +331,10 @@ export const deletePurchase = async (req, res) => {
       { _id: purchase.productId },
       {
         $inc: {
-          productQuantity: purchase.quantity,
-          totalAmountWithoutTax: purchase.totalAmountWithoutTax,
-          taxAmount: purchase.taxAmount,
-          totalAmountWithTax: purchase.totalAmountWithTax,
+          productQuantity: -purchase.quantity,
+          totalAmountWithoutTax: -purchase.totalAmountWithoutTax,
+          taxAmount: -purchase.taxAmount,
+          totalAmountWithTax: -purchase.totalAmountWithTax,
         },
       }
     )

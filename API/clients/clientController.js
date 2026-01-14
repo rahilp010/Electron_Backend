@@ -145,11 +145,11 @@ const deleteClient = async (req, res) => {
             accountId: client.accountId,
         });
 
-        if (ledgerCount > 1) {
-            return res.status(400).json({
-                error: 'Cannot delete client with ledger history',
-            });
-        }
+        // if (ledgerCount > 1) {
+        //     return res.status(400).json({
+        //         error: 'Cannot delete client with ledger history',
+        //     });
+        // }
 
         await Ledger.deleteMany({ accountId: client.accountId });
         await Account.findByIdAndDelete(client.accountId);

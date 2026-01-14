@@ -1,0 +1,63 @@
+import PDFDocument from 'pdfkit';
+import ExcelJS from 'exceljs';
+import Sales from '../sales/salesSchema.js';
+import express from 'express';
+
+export const exportSalesPDF = async (req, res) => {
+    const sales = await Sales.find({}).populate('clientId productId');
+
+    const doc = new PDFDocument({ margin: 30 });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=sales-report.pdf');
+
+    doc.pipe(res);
+    doc.fontSize(18).text('Sales Report', { align: 'center' });
+    doc.moveDown();
+
+    sales.forEach(s => {
+        doc
+            .fontSize(10)
+            .text(
+                `${s.clientId?.clientName} | ${s.productId?.productName} | ₹${s.totalAmountWithTax}`,
+            );
+    });
+
+    doc.end();
+};
+
+
+export const exportSalesExcel = async (req, res) => {
+    const sales = await Sales.find({}).populate('clientId productId');
+
+    const wb = new ExcelJS.Workbook();
+    const sheet = wb.addWorksheet('Sales');
+
+    sheet.columns = [
+        { header: 'Client', key: 'client' },
+        { header: 'Product', key: 'product' },
+        { header: 'Total', key: 'total' },
+    ];
+
+    sales.forEach(s =>
+        sheet.addRow({
+            client: s.clientId?.clientName,
+            product: s.productId?.productName,
+            total: s.totalAmountWithTax,
+        }),
+    );
+
+    res.setHeader(
+        'Content-Disposition',
+        'attachment; filename=sales-report.xlsx',
+    );
+    await wb.xlsx.write(res);
+    res.end();
+};
+
+const openSalesPDFRouter = express.Router()
+
+openSalesPDFRouter.get('/', exportSalesPDF)
+openSalesPDFRouter.get('/excel', exportSalesExcel)
+
+export default openSalesPDFRouter
+

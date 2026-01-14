@@ -154,10 +154,78 @@ const deleteLedgerEntry = async (req, res) => {
   }
 };
 
+
+const deleteMultipleLedgerEntries = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Invalid request format' });
+    }
+
+    /* 1️⃣ Fetch ledger entries */
+    const entries = await Ledger.find({ _id: { $in: ids } }).session(session);
+    if (!entries.length) {
+      return res.status(404).json({ error: 'No ledger entries found' });
+    }
+
+    /* 2️⃣ Group entries by account */
+    const accountMap = {};
+
+    for (const entry of entries) {
+      const accId = entry.accountId.toString();
+      if (!accountMap[accId]) {
+        accountMap[accId] = [];
+      }
+      accountMap[accId].push(entry);
+    }
+
+    /* 3️⃣ Reverse balances PER ACCOUNT */
+    for (const [accountId, accEntries] of Object.entries(accountMap)) {
+      const account = await Account.findById(accountId).session(session);
+      if (!account) continue;
+
+      let balance = account.currentBalance;
+
+      for (const entry of accEntries) {
+        if (entry.entryType === 'debit') {
+          balance -= entry.amount;
+        } else {
+          balance += entry.amount;
+        }
+      }
+
+      account.currentBalance = balance;
+      await account.save({ session });
+    }
+
+    /* 4️⃣ Delete ledger entries */
+    await Ledger.deleteMany({ _id: { $in: ids } }).session(session);
+
+    await session.commitTransaction();
+    session.endSession();
+
+    res.status(200).json({
+      message: 'Multiple ledger entries deleted successfully',
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+
+    console.error('❌ Ledger bulk delete error:', error);
+    res.status(500).json({ error: 'Failed to delete ledger entries' });
+  }
+};
+
+
 export {
   getLedgerByAccount,
   addLedgerEntry,
   deleteLedgerEntry,
+  deleteMultipleLedgerEntries,
   getTransferHistory,
   getClientLedger
 };
