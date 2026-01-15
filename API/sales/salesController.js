@@ -130,7 +130,7 @@ export const createSales = async (req, res) => {
     res.status(201).json(populatedSale)
 
     /* CLIENT BALANCE */
-    await updateClientBalances(clientId, sale, 'apply')
+    await updateClientBalances(clientId, { ...sale.toObject(), pageName: 'Sales' }, 'apply')
 
     /* LEDGER */
     await addClientLedgerEntry({
@@ -170,6 +170,28 @@ export const createSales = async (req, res) => {
     res.status(500).json({ error: 'Failed to create sale' })
   }
 }
+
+const calculateSalePaymentSplit = (tx, grandTotal) => {
+  let paidAmount = 0;
+  let pendingAmount = 0;
+
+  if (tx.paymentType === 'partial') {
+    paidAmount = Number(tx.paidAmount || 0);
+    pendingAmount = Math.max(grandTotal - paidAmount, 0);
+
+  } else if (tx.statusOfTransaction === 'completed') {
+    paidAmount = grandTotal;
+    pendingAmount = 0;
+
+  } else {
+    // pending / unpaid
+    paidAmount = 0;
+    pendingAmount = grandTotal;
+  }
+
+  return { paidAmount, pendingAmount };
+};
+
 
 /* ========================= UPDATE ========================= */
 export const updateSales = async (req, res) => {
@@ -229,15 +251,21 @@ export const updateSales = async (req, res) => {
     )
 
     /* ================= CLIENT ROLLBACK ================= */
-    await updateClientBalances(oldSale.clientId, oldSale, 'rollback')
+    await updateClientBalances(oldSale.clientId, { ...oldSale.toObject(), pageName: 'Sales' }, 'rollback')
 
     /* ================= UPDATE SALE ================= */
+
+    const { paidAmount: finalPaid, pendingAmount: finalPending } =
+      calculateSalePaymentSplit(req.body, newGrandTotal);
+
     const updatedSale = await Sales.findByIdAndUpdate(
       id,
       {
         ...req.body,
         quantity: Number(req.body.quantity),
         saleAmount: Number(req.body.saleAmount),
+        paidAmount: finalPaid,
+        pendingAmount: finalPending,
         taxAmount,
         totalAmountWithoutTax: subtotal,
         totalAmountWithTax: newGrandTotal,
@@ -261,7 +289,7 @@ export const updateSales = async (req, res) => {
     /* ================= CLIENT APPLY ================= */
     await updateClientBalances(
       updatedSale.clientId,
-      updatedSale,
+      { ...updatedSale.toObject(), pageName: 'Sales' },
       'apply'
     )
 
@@ -291,16 +319,18 @@ export const updateSales = async (req, res) => {
         ? config.cashClientId
         : config.bankClientId
 
-    await addClientLedgerEntry({
-      clientId: oldSystemClientId,
-      accountId: oldSystemAccountId,
-      amount: oldSale.totalAmountWithTax,
-      entryType: 'debit',
-      referenceType: 'Adjustment',
-      referenceId: oldSale._id,
-      narration: 'Sales Adjustment Rollback',
-      date: new Date(),
-    })
+    if (difference !== 0) {
+      await addClientLedgerEntry({
+        clientId: oldSystemClientId,
+        accountId: oldSystemAccountId,
+        amount: oldSale.totalAmountWithTax,
+        entryType: 'debit',
+        referenceType: 'Adjustment',
+        referenceId: oldSale._id,
+        narration: 'Sales Adjustment Rollback',
+        date: new Date(),
+      }).catch(console.error);
+    }
 
     const newSystemAccountId =
       updatedSale.paymentMethod === 'Cash'
@@ -312,16 +342,18 @@ export const updateSales = async (req, res) => {
         ? config.cashClientId
         : config.bankClientId
 
-    await addClientLedgerEntry({
-      clientId: newSystemClientId,
-      accountId: newSystemAccountId,
-      amount: updatedSale.totalAmountWithTax,
-      entryType: 'credit',
-      referenceType: 'Adjustment',
-      referenceId: updatedSale._id,
-      narration: 'Sales Adjustment Applied',
-      date: new Date(),
-    })
+    if (difference !== 0) {
+      await addClientLedgerEntry({
+        clientId: newSystemClientId,
+        accountId: newSystemAccountId,
+        amount: updatedSale.totalAmountWithTax,
+        entryType: 'credit',
+        referenceType: 'Adjustment',
+        referenceId: updatedSale._id,
+        narration: 'Sales Adjustment Applied',
+        date: new Date(),
+      })
+    }
 
 
     /* ================= RESPONSE ================= */
@@ -348,7 +380,7 @@ export const deleteSales = async (req, res) => {
       return res.status(404).json({ error: 'Sales not found' })
 
     /* CLIENT */
-    await updateClientBalances(sale.clientId, sale, 'rollback')
+    await updateClientBalances(sale.clientId, { ...sale.toObject(), pageName: 'Sales' }, 'rollback')
 
     /* PRODUCT */
     await Product.updateOne(

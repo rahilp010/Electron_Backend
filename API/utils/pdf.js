@@ -8,15 +8,24 @@ export const exportSalesPDF = async (req, res) => {
         const sales = await Sales.find({}).populate('clientId productId');
 
         const doc = new PDFDocument({ margin: 30 });
+        const buffers = [];
 
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader(
-            'Content-Disposition',
-            'attachment; filename="sales-report.pdf"',
-        );
+        // 🔥 Collect PDF chunks
+        doc.on('data', buffers.push.bind(buffers));
+        doc.on('end', () => {
+            const pdfData = Buffer.concat(buffers);
 
-        doc.pipe(res);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader(
+                'Content-Disposition',
+                'attachment; filename="sales-report.pdf"',
+            );
+            res.setHeader('Content-Length', pdfData.length);
 
+            res.end(pdfData);
+        });
+
+        // ===== PDF CONTENT =====
         doc.fontSize(18).text('Sales Report', { align: 'center' });
         doc.moveDown();
 
@@ -31,6 +40,7 @@ export const exportSalesPDF = async (req, res) => {
 
         doc.end();
     } catch (err) {
+        console.error(err);
         res.status(500).json({ message: 'Failed to generate PDF' });
     }
 };

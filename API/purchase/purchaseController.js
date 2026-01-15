@@ -127,7 +127,7 @@ export const createPurchase = async (req, res) => {
       .populate("clientId")
       .populate("productId")
 
-    await updateClientBalances(clientId, purchase, 'apply')
+    await updateClientBalances(clientId, { ...purchase.toObject(), pageName: 'Purchase' }, 'apply')
 
     res.status(201).json(populatedPurchase)
 
@@ -168,6 +168,27 @@ export const createPurchase = async (req, res) => {
     res.status(500).json({ error: "Failed to create purchase" });
   }
 };
+
+const calculatePurchasePaymentSplit = (tx, grandTotal) => {
+  let paidAmount = 0
+  let pendingFromOurs = 0
+
+  if (tx.paymentType === 'partial') {
+    paidAmount = Number(tx.paidAmount || 0)
+    pendingFromOurs = Math.max(grandTotal - paidAmount, 0)
+
+  } else if (tx.statusOfTransaction === 'completed') {
+    paidAmount = grandTotal
+    pendingFromOurs = 0
+
+  } else {
+    // pending / unpaid
+    paidAmount = 0
+    pendingFromOurs = grandTotal
+  }
+
+  return { paidAmount, pendingFromOurs }
+}
 
 /* ========================= UPDATE ========================= */
 export const updatePurchase = async (req, res) => {
@@ -225,15 +246,21 @@ export const updatePurchase = async (req, res) => {
     )
 
     /* ================= CLIENT ROLLBACK ================= */
-    await updateClientBalances(oldPurchase.clientId, oldPurchase, 'rollback')
+    await updateClientBalances(oldPurchase.clientId, { ...oldPurchase.toObject(), pageName: 'Purchase' }, 'rollback')
 
-    /* ================= UPDATE SALE ================= */
+    /* ================= UPDATE purchase ================= */
+
+    const { paidAmount: finalPaid, pendingFromOurs: finalPending } =
+      calculatePurchasePaymentSplit(req.body, newGrandTotal);
+
     const updatedPurchase = await Purchase.findByIdAndUpdate(
       id,
       {
         ...req.body,
         quantity: Number(req.body.quantity),
-        saleAmount: Number(req.body.saleAmount),
+        purchaseAmount: Number(req.body.purchaseAmount),
+        paidAmount: finalPaid,
+        pendingFromOurs: finalPending,
         taxAmount,
         totalAmountWithoutTax: subtotal,
         totalAmountWithTax: newGrandTotal,
@@ -257,7 +284,7 @@ export const updatePurchase = async (req, res) => {
     /* ================= CLIENT APPLY ================= */
     await updateClientBalances(
       updatedPurchase.clientId,
-      updatedPurchase,
+      { ...updatedPurchase.toObject(), pageName: 'Purchase' },
       'apply'
     )
 
@@ -277,25 +304,48 @@ export const updatePurchase = async (req, res) => {
       }).catch(console.error);
     }
 
-    const systemAccountId =
-      paymentMethod === "Cash"
+    const oldSystemAccountId =
+      oldPurchase.paymentMethod === "Cash"
         ? config.cashAccountId  // Cash Account ID
         : config.bankAccountId; // Bank Account ID
 
-    const systemClientId = paymentMethod === "Cash"
+    const oldSystemClientId = oldPurchase.paymentMethod === "Cash"
       ? config.cashClientId // Cash Client ID
       : config.bankClientId; // Bank Client ID
 
     if (difference !== 0) {
-      addClientLedgerEntry({
-        clientId: systemClientId,
-        accountId: systemAccountId,
-        amount: Math.abs(difference),
-        entryType: difference > 0 ? "debit" : "credit",
-        referenceType: "Purchase Adjustment",
-        referenceId: id,
-        narration: "Purchase updated adjustment",
-        date,
+      await addClientLedgerEntry({
+        clientId: oldSystemClientId,
+        accountId: oldSystemAccountId,
+        amount: oldPurchase.totalAmountWithTax,
+        entryType: "credit",
+        referenceType: "Adjustment",
+        referenceId: oldPurchase._id,
+        narration: "Purchase Adjustment Rollback",
+        date: new Date(),
+      }).catch(console.error);
+    }
+
+    const newSystemAccountId =
+      updatedPurchase.paymentMethod === 'Cash'
+        ? config.cashAccountId
+        : config.bankAccountId
+
+    const newSystemClientId =
+      updatedPurchase.paymentMethod === 'Cash'
+        ? config.cashClientId
+        : config.bankClientId
+
+    if (difference !== 0) {
+      await addClientLedgerEntry({
+        clientId: newSystemClientId,
+        accountId: newSystemAccountId,
+        amount: updatedPurchase.totalAmountWithTax,
+        entryType: 'credit',
+        referenceType: 'Adjustment',
+        referenceId: updatedPurchase._id,
+        narration: 'Purchase Adjustment Applied',
+        date: new Date(),
       }).catch(console.error);
     }
 
@@ -324,7 +374,7 @@ export const deletePurchase = async (req, res) => {
     }
 
     /* CLIENT */
-    await updateClientBalances(purchase.clientId, purchase, 'rollback')
+    await updateClientBalances(purchase.clientId, { ...purchase.toObject(), pageName: 'Purchase' }, 'rollback')
 
     /* PRODUCT */
     await Product.updateOne(

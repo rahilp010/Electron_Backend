@@ -14,6 +14,7 @@ import ledgerRouter from './API/bankAccounts/ladger/ladgerRouter.js';
 import transferRouter from './API/bankAccounts/transferAmount/transferRouter.js';
 import analyticsRouter from './API/analytics/analyticsRouter.js';
 import openSalesPDFRouter from './API/utils/pdf.js';
+import pendingReport from './API/utils/pendingReportController.js';
 // import authRouter from './API/auth/authRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,6 +53,7 @@ const app = express();
     app.use('/api/analytics', analyticsRouter)
     app.use('/api/version', versionController)
     app.use('/api/sales', openSalesPDFRouter)
+    app.use('/api/reports', pendingReport)
     // app.use('/api/auth', authRouter)
     app.use('/updates', express.static(__dirname))
 
