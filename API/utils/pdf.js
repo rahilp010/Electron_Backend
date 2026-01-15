@@ -4,27 +4,36 @@ import Sales from '../sales/salesSchema.js';
 import express from 'express';
 
 export const exportSalesPDF = async (req, res) => {
-    const sales = await Sales.find({}).populate('clientId productId');
+    try {
+        const sales = await Sales.find({}).populate('clientId productId');
 
-    const doc = new PDFDocument({ margin: 30 });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'attachment; filename=sales-report.pdf');
+        const doc = new PDFDocument({ margin: 30 });
 
-    doc.pipe(res);
-    doc.fontSize(18).text('Sales Report', { align: 'center' });
-    doc.moveDown();
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader(
+            'Content-Disposition',
+            'attachment; filename="sales-report.pdf"',
+        );
 
-    sales.forEach(s => {
-        doc
-            .fontSize(10)
-            .text(
-                `${s.clientId?.clientName} | ${s.productId?.productName} | ₹${s.totalAmountWithTax}`,
-            );
-    });
+        doc.pipe(res);
 
-    doc.end();
+        doc.fontSize(18).text('Sales Report', { align: 'center' });
+        doc.moveDown();
+
+        sales.forEach(s => {
+            doc
+                .fontSize(10)
+                .text(
+                    `${s.clientId?.clientName || 'N/A'} | ${s.productId?.productName || 'N/A'
+                    } | ₹${s.totalAmountWithTax}`,
+                );
+        });
+
+        doc.end();
+    } catch (err) {
+        res.status(500).json({ message: 'Failed to generate PDF' });
+    }
 };
-
 
 export const exportSalesExcel = async (req, res) => {
     const sales = await Sales.find({}).populate('clientId productId');
