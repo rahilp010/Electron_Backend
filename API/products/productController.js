@@ -40,12 +40,38 @@ const getProductById = async (req, res) => {
     }
 };
 
+const decreaseMachinePartsStock = async (parts, machineQty) => {
+    for (const part of parts) {
+        const partProduct = await Product.findById(part.productId);
+
+        if (!partProduct) {
+            throw new Error('Part product not found');
+        }
+
+        const requiredQty = part.qtyPerMachine * machineQty;
+
+        if (partProduct.productQuantity < requiredQty) {
+            throw new Error(
+                `Insufficient stock for ${partProduct.productName}`,
+            );
+        }
+
+        await Product.updateOne(
+            { _id: part.productId },
+            { $inc: { productQuantity: -requiredQty } },
+        );
+    }
+};
+
+
 const createProduct = async (req, res) => {
     try {
         const {
             productName,
             productPrice,
-            productQuantity,
+            productQuantity = 0,
+            productType,
+            parts = [],
             clientName,
             assetType,
             saleHSN,
@@ -61,10 +87,16 @@ const createProduct = async (req, res) => {
             return res.status(400).json({ error: 'Missing required fields' });
         }
 
+        if (productType === 'MACHINE' && parts.length > 0 && productQuantity > 0) {
+            await decreaseMachinePartsStock(parts, productQuantity);
+        }
+
         const newProduct = await Product.create({
             productName,
             productPrice,
             productQuantity,
+            productType,
+            parts,
             clientName,
             assetType,
             saleHSN,
@@ -93,6 +125,32 @@ const updateProduct = async (req, res) => {
 
         if (!mongoose.Types.ObjectId.isValid(id)) {
             return res.status(400).json({ error: 'Invalid product ID' });
+        }
+
+        const oldProduct = await Product.findById(id);
+        if (!oldProduct) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        if (oldProduct.productType === 'MACHINE' && oldProduct.parts?.length) {
+            for (const part of oldProduct.parts) {
+                await Product.updateOne(
+                    { _id: part.productId },
+                    {
+                        $inc: {
+                            productQuantity:
+                                part.qtyPerMachine * oldProduct.productQuantity,
+                        },
+                    },
+                );
+            }
+        }
+
+        if (req.body.productType === 'MACHINE' && req.body.parts?.length) {
+            await decreaseMachinePartsStock(
+                req.body.parts,
+                req.body.productQuantity,
+            );
         }
 
         const updatedProduct = await Product.findByIdAndUpdate(
@@ -130,6 +188,20 @@ const deleteProduct = async (req, res) => {
 
         if (!deleted) {
             return res.status(404).json({ error: 'Product not found' });
+        }
+
+        if (deleted.productType === 'MACHINE') {
+            for (const part of deleted.parts) {
+                await Product.updateOne(
+                    { _id: part.productId },
+                    {
+                        $inc: {
+                            productQuantity:
+                                part.qtyPerMachine * deleted.productQuantity,
+                        },
+                    },
+                );
+            }
         }
 
         res.status(200).json({ message: 'Product deleted successfully' });

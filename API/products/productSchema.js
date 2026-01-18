@@ -1,10 +1,33 @@
 import mongoose from "mongoose";
 
+const partSchema = new mongoose.Schema(
+    {
+        productId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'Product',
+            required: true,
+        },
+        
+        qtyPerMachine: {
+            type: Number,
+            required: true,
+            min: 1,
+        },
+    },
+    { _id: false },
+);
+
 const productSchema = new mongoose.Schema(
     {
         productName: { type: String, required: true, index: true },
         productPrice: { type: Number, required: true },
         productQuantity: { type: Number, default: 0 },
+        productType: {
+            type: String,
+            enum: ['PRODUCT', 'MACHINE'],
+            default: 'PRODUCT',
+        },
+        parts: [partSchema],
         clientName: { type: String, index: true },
         assetType: { type: String, index: true },
         saleHSN: { type: String },
