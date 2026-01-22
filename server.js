@@ -15,6 +15,7 @@ import transferRouter from './API/bankAccounts/transferAmount/transferRouter.js'
 import analyticsRouter from './API/analytics/analyticsRouter.js';
 import openSalesPDFRouter from './API/utils/pdf.js';
 import pendingReport from './API/utils/pendingReportController.js';
+import authRouter from './API/auth/authRouter.js';
 // import authRouter from './API/auth/authRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -54,7 +55,7 @@ const app = express();
     app.use('/api/version', versionController)
     app.use('/api/sales', openSalesPDFRouter)
     app.use('/api/reports', pendingReport)
-    // app.use('/api/auth', authRouter)
+    app.use('/api/auth', authRouter)
     app.use('/updates', express.static(__dirname))
 
     app.get('/api/health', (req, res) => {
@@ -68,9 +69,8 @@ const app = express();
     });
 
 
-
     app.listen(config.port, () => {
-        console.log(`❗ Server is running on port ${config.port}`);
+        console.log(`❗☑️ Server is running on port ${config.port}`);
     })
 })()
 

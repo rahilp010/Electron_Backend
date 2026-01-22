@@ -1,11 +1,10 @@
 import express from 'express'
-import { createQR, verifyQR, checkSessionStatus } from './authController.js';
+import { register, login } from './authController.js';
 
 const authRouter = express.Router()
 
-authRouter.get('/qr', createQR)
-authRouter.post('/verify', verifyQR)
-authRouter.get('/status/:sessionId', checkSessionStatus)
+authRouter.post('/signup', register)
+authRouter.post('/login', login)
 
 
 export default authRouter;

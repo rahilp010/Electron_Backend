@@ -26,6 +26,7 @@
       "mongoose": "^8.17.1",
       "multer": "^2.0.2",
       "pdfkit": "^0.17.2",
+      "socket.io": "^4.8.3",
       "uuid": "^12.0.0"
    },
    "devDependencies": {
