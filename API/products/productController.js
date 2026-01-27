@@ -7,7 +7,7 @@ const getAllProducts = async (req, res) => {
         const limit = 20;
         const skip = (page - 1) * limit;
 
-        const products = await Product.find({})
+        const products = await Product.find({ userId: req.userId })
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit)
@@ -106,6 +106,7 @@ const createProduct = async (req, res) => {
             totalAmountWithTax,
             totalAmountWithoutTax,
             addParts,
+            userId: req.userId,
         });
 
         res.status(201).json({

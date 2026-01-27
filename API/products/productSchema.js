@@ -7,7 +7,7 @@ const partSchema = new mongoose.Schema(
             ref: 'Product',
             required: true,
         },
-        
+
         qtyPerMachine: {
             type: Number,
             required: true,
@@ -19,6 +19,11 @@ const partSchema = new mongoose.Schema(
 
 const productSchema = new mongoose.Schema(
     {
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            required: true,
+        },
         productName: { type: String, required: true, index: true },
         productPrice: { type: Number, required: true },
         productQuantity: { type: Number, default: 0 },
