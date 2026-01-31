@@ -5,7 +5,7 @@ import Ledger from '../ladger/ladgerSchema.js';
 const getAllAccounts = async (req, res) => {
     try {
         const accounts = await Account.find(
-            {},
+            { userId: req.userId },
             {
                 accountName: 1,
                 accountNumber: 1,
@@ -41,13 +41,14 @@ const getAccountById = async (req, res) => {
             return res.status(400).json({ error: 'Invalid account ID' });
         }
 
-        const account = await Account.findById(id)
-            .populate({
-                path: 'clientId',
-                select: 'clientName phoneNo',
-                options: { lean: true },
-            })
-            .lean();
+        const account = await Account.findOne({
+            _id: id,
+            userId: req.userId,
+        }).populate({
+            path: 'clientId',
+            select: 'clientName phoneNo',
+            options: { lean: true },
+        }).lean();
 
         if (!account) {
             return res.status(404).json({ error: 'Account not found' });
@@ -71,8 +72,11 @@ const updateAccount = async (req, res) => {
         if (accountNumber !== undefined) update.accountNumber = accountNumber;
         if (isActive !== undefined) update.isActive = isActive;
 
-        const account = await Account.findByIdAndUpdate(
-            id,
+        const account = await Account.findOneAndUpdate(
+            {
+                _id: id,
+                userId: req.userId,
+            },
             { $set: update },
             { new: true, lean: true }
         );
@@ -96,7 +100,11 @@ const deleteAccount = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const account = await Account.findById(id).lean();
+        const account = await Account.findOne({
+            _id: id,
+            userId: req.userId,
+        }).lean();
+
         if (!account) {
             return res.status(404).json({ error: 'Account not found' });
         }

@@ -1,12 +1,13 @@
 import express from 'express'
 import { createClient, deleteClient, getAllClients, getClientById, updateClient } from './clientController.js';
+import { authMiddleware } from '../../middleware/authMiddleware.js';
 
 const clientRouter = express.Router()
 
-clientRouter.get('/', getAllClients)
-clientRouter.get('/:id', getClientById)
-clientRouter.post('/', createClient)
-clientRouter.put('/:id', updateClient)
-clientRouter.delete('/:id', deleteClient)
+clientRouter.get('/', authMiddleware, getAllClients)
+clientRouter.get('/:id', authMiddleware, getClientById)
+clientRouter.post('/', authMiddleware, createClient)
+clientRouter.put('/:id', authMiddleware, updateClient)
+clientRouter.delete('/:id', authMiddleware, deleteClient)
 
 export default clientRouter;

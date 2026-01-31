@@ -8,10 +8,18 @@ import generateAccountNumber from "../utils/generateAccountNumber.js";
 // ✅ Get all clients
 const getAllClients = async (req, res, next) => {
     try {
-        const clients = await Client.find().sort({ createdAt: 1 }); // ASC order by createdAt
+        const page = Number(req.query.page || 1);
+        const limit = 20;
+        const skip = (page - 1) * limit;
+
+        const clients = await Client.find({ userId: req.userId })
+            .sort({ createdAt: 1 }) // ASC order by createdAt
+            .skip(skip)
+            .limit(limit)
+            .lean();
         res.status(200).json(clients);
     } catch (error) {
-        console.error("Error fetching clients:", error);
+        console.error("❌ Error fetching clients:", error);
         res.status(500).json({ error: "Failed to fetch clients" });
     }
 };
@@ -53,13 +61,15 @@ const createClient = async (req, res) => {
             salary,
             pendingAmount,
             paidAmount,
-            pendingFromOurs
+            pendingFromOurs,
+            userId: req.userId,
         })
 
         const accountNumber = await generateAccountNumber();
 
         const account = await Account.create({
             clientId: client._id,
+            userId: req.userId,
             accountName: client.clientName,
             openingBalance,
             currentBalance: openingBalance,
