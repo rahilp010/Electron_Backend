@@ -1,5 +1,5 @@
 import express from 'express'
-import { addLedgerEntry, deleteLedgerEntry, getLedgerByAccount, getClientLedger, getTransferHistory, deleteMultipleLedgerEntries } from './ladgerController.js'
+import { addLedgerEntry, deleteLedgerEntry, getLedgerByAccount, getClientLedger, getTransferHistory, deleteMultipleLedgerEntries } from './ledgerController.js'
 
 const ledgerRouter = express.Router()
 

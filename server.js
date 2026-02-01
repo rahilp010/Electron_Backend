@@ -10,7 +10,7 @@ import versionController from './API/version/versionController.js';
 import purchaseRouter from './API/purchase/purchaseRouter.js';
 import salesRouter from './API/sales/salesRouter.js';
 import accountRouter from './API/bankAccounts/accounts/accountRouter.js';
-import ledgerRouter from './API/bankAccounts/ladger/ladgerRouter.js';
+import ledgerRouter from './API/bankAccounts/ledger/ledgerRouter.js';
 import transferRouter from './API/bankAccounts/transferAmount/transferRouter.js';
 import analyticsRouter from './API/analytics/analyticsRouter.js';
 import openSalesPDFRouter from './API/utils/pdf.js';

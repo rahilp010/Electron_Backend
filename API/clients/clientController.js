@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Client from "./clientSchema.js";
 import Account from "../bankAccounts/accounts/accountSchema.js";
-import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
+import Ledger from "../bankAccounts/ledger/ledgerSchema.js";
 import generateAccountNumber from "../utils/generateAccountNumber.js";
 // import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 

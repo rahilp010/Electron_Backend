@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Account from './accountSchema.js';
-import Ledger from '../ladger/ladgerSchema.js';
+import Ledger from '../ledger/ledgerSchema.js';
 
 const getAllAccounts = async (req, res) => {
     try {

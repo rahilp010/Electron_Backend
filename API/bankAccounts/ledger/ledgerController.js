@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import Ledger from './ladgerSchema.js';
+import Ledger from './ledgerSchema.js';
 import Account from '../accounts/accountSchema.js';
 
 /* ================= GET LEDGER BY ACCOUNT ================= */

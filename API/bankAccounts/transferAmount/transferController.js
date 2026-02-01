@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import Account from '../accounts/accountSchema.js';
-import Ledger from '../ladger/ladgerSchema.js';
+import Ledger from '../ledger/ledgerSchema.js';
 
 export const transferAmount = async (req, res) => {
   const session = await mongoose.startSession();
