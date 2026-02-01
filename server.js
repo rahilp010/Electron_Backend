@@ -13,9 +13,9 @@ import accountRouter from './API/bankAccounts/accounts/accountRouter.js';
 import ledgerRouter from './API/bankAccounts/ledger/ledgerRouter.js';
 import transferRouter from './API/bankAccounts/transferAmount/transferRouter.js';
 import analyticsRouter from './API/analytics/analyticsRouter.js';
-import openSalesPDFRouter from './API/utils/pdf.js';
 import pendingReport from './API/utils/pendingReportController.js';
 import authRouter from './API/Auth/authRouter.js';
+import reportRouter from './API/utils/reportController.js'
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,10 +52,10 @@ const app = express();
     app.use('/api/transfer', transferRouter)
     app.use('/api/analytics', analyticsRouter)
     app.use('/api/version', versionController)
-    app.use('/api/sales', openSalesPDFRouter)
     app.use('/api/reports', pendingReport)
     app.use('/api/auth', authRouter)
     app.use('/updates', express.static(__dirname))
+    app.use('/api/generate', reportRouter)
 
     app.get('/api/health', (req, res) => {
         res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });

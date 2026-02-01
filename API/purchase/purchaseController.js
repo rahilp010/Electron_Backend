@@ -75,10 +75,15 @@ export const createPurchase = async (req, res) => {
       dueDate,
       description,
       date,
+      payments = []
     } = req.body;
 
     if (!clientId || !productId || !quantity || !purchaseAmount) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (!Array.isArray(payments) || payments.length === 0) {
+      return res.status(400).json({ error: "At least one payment is required" });
     }
 
     const qty = Number(quantity);
@@ -89,6 +94,20 @@ export const createPurchase = async (req, res) => {
     }
 
     const { subtotal, taxAmount, grandTotal } = calculateTotals(req.body)
+
+    // const paidAmount = payments.reduce(
+    //   (sum, p) => sum + Number(p.amount || 0),
+    //   0
+    // );
+
+    // if (paidAmount > grandTotal) {
+    //   return res.status(400).json({ error: "Paid amount exceeds total" });
+    // }
+
+    // const pendingAmount = grandTotal - paidAmount;
+
+    // const statusOfTransaction =
+    //   pendingAmount === 0 ? "completed" : "partial";
 
     const [client, product] = await Promise.all([
       Client.findById(clientId).lean(),
@@ -114,6 +133,7 @@ export const createPurchase = async (req, res) => {
 
     const purchase = await Purchase.create({
       ...req.body,
+      userId: req.userId,
       quantity: qty,
       purchaseAmount: price,
       taxAmount,
@@ -121,6 +141,7 @@ export const createPurchase = async (req, res) => {
       totalAmountWithTax: grandTotal,
       transactionType: 'Payment',
       pageName: 'Purchase',
+      payments
     })
 
     const populatedPurchase = await Purchase.findById(purchase._id)
@@ -133,6 +154,7 @@ export const createPurchase = async (req, res) => {
 
     /* LEDGER */
     await addClientLedgerEntry({
+      userId: req.userId,
       clientId: client._id,
       accountId: client.accountId,
       amount: grandTotal,
@@ -153,6 +175,7 @@ export const createPurchase = async (req, res) => {
       : config.bankClientId; // Bank Client ID
 
     await addClientLedgerEntry({
+      userId: req.userId,
       clientId: systemClientId,
       accountId: systemAccountId,
       amount: grandTotal,
@@ -210,7 +233,8 @@ export const updatePurchase = async (req, res) => {
       date,
       dueDate,
       description,
-      paymentMethod
+      paymentMethod,
+      payments = []
     } = req.body;
 
     const oldPurchase = await Purchase.findById(id);
@@ -257,6 +281,7 @@ export const updatePurchase = async (req, res) => {
       id,
       {
         ...req.body,
+        payments: req.body.payments,
         quantity: Number(req.body.quantity),
         purchaseAmount: Number(req.body.purchaseAmount),
         paidAmount: finalPaid,
@@ -293,6 +318,7 @@ export const updatePurchase = async (req, res) => {
 
     if (difference !== 0) {
       addClientLedgerEntry({
+        userId: req.userId,
         clientId,
         accountId: oldPurchase.accountId,
         amount: Math.abs(difference),
@@ -315,6 +341,7 @@ export const updatePurchase = async (req, res) => {
 
     if (difference !== 0) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: oldSystemClientId,
         accountId: oldSystemAccountId,
         amount: oldPurchase.totalAmountWithTax,
@@ -396,6 +423,7 @@ export const deletePurchase = async (req, res) => {
 
     if (client) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: client._id,
         accountId: client.accountId,
         amount: totalAmount,
@@ -418,6 +446,7 @@ export const deletePurchase = async (req, res) => {
 
     if (client) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: systemClientId,
         accountId: systemAccountId,
         amount: totalAmount,

@@ -16,9 +16,35 @@ const saleSchema = new mongoose.Schema(
         isMultiProduct: { type: Boolean, default: false },
         paymentMethod: {
             type: String,
-            enum: ['Cash', 'Bank'],
-            default: 'Bank'
+            enum: ['cash', 'bank'],
+            default: 'bank'
         },
+        payments: [
+            {
+                method: {
+                    type: String,
+                    enum: ['cash', 'gpay', 'bank', 'cheque'],
+                    required: true,
+                },
+                amount: {
+                    type: Number,
+                    required: true,
+                    min: 0,
+                },
+                chequeNo: {
+                    type: String,
+                    default: null
+                },
+                clientId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Client',
+                },
+                accountId: {
+                    type: mongoose.Schema.Types.ObjectId,
+                    ref: 'Account',
+                },
+            },
+        ],
         statusOfTransaction: {
             type: String,
             enum: ['completed', 'pending', 'partial'],
@@ -42,7 +68,7 @@ const saleSchema = new mongoose.Schema(
         methodType: {
             type: String,
             enum: ['Receipt', 'Payment', 'Salary'],
-            default: 'Payment'
+            default: 'Receipt'
         },
         dueDate: { type: Date },
         description: { type: String },

@@ -13,6 +13,7 @@ export const getAllSales = async (req, res) => {
     const page = Number(req.query.page || 1);
     const limit = 20;
     const skip = (page - 1) * limit;
+    
     const sales = await Sales.find({})
       .populate("clientId", "clientName")
       .populate("productId", "productName")
@@ -73,10 +74,15 @@ export const createSales = async (req, res) => {
       description,
       methodType,
       date,
+      payments = []
     } = req.body
 
     if (!clientId || !productId || !quantity || !saleAmount) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    if (!Array.isArray(payments) || payments.length === 0) {
+      return res.status(400).json({ error: "At least one payment is required" });
     }
 
     const qty = Number(quantity)
@@ -114,6 +120,7 @@ export const createSales = async (req, res) => {
     /* SALES DOC */
     const sale = await Sales.create({
       ...req.body,
+      userId: req.userId,
       quantity: qty,
       saleAmount: price,
       taxAmount,
@@ -121,6 +128,7 @@ export const createSales = async (req, res) => {
       totalAmountWithTax: grandTotal,
       methodType: 'Receipt',
       pageName: 'Sales',
+      payments
     })
 
     const populatedSale = await Sales.findById(sale._id)
@@ -134,6 +142,7 @@ export const createSales = async (req, res) => {
 
     /* LEDGER */
     await addClientLedgerEntry({
+      userId: req.userId,
       clientId,
       accountId: client.accountId,
       amount: grandTotal,
@@ -155,6 +164,7 @@ export const createSales = async (req, res) => {
         : config.bankClientId
 
     await addClientLedgerEntry({
+      userId: req.userId,
       clientId: systemClientId,
       accountId: systemAccountId,
       amount: grandTotal,
@@ -166,7 +176,7 @@ export const createSales = async (req, res) => {
     }).catch(console.error);
 
   } catch (err) {
-    console.error(err)
+    console.error("❌ Error creating sales:", err)
     res.status(500).json({ error: 'Failed to create sale' })
   }
 }
@@ -214,7 +224,8 @@ export const updateSales = async (req, res) => {
       date,
       dueDate,
       description,
-      paymentMethod
+      paymentMethod,
+      payments = []
     } = req.body;
 
     const oldSale = await Sales.findById(id)
@@ -262,6 +273,7 @@ export const updateSales = async (req, res) => {
       id,
       {
         ...req.body,
+        payments: req.body.payments,
         quantity: Number(req.body.quantity),
         saleAmount: Number(req.body.saleAmount),
         paidAmount: finalPaid,
@@ -298,6 +310,7 @@ export const updateSales = async (req, res) => {
 
     if (difference !== 0) {
       addClientLedgerEntry({
+        userId: req.userId,
         clientId,
         accountId: oldSale.accountId,
         amount: Math.abs(difference),
@@ -321,6 +334,7 @@ export const updateSales = async (req, res) => {
 
     if (difference !== 0) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: oldSystemClientId,
         accountId: oldSystemAccountId,
         amount: oldSale.totalAmountWithTax,
@@ -344,6 +358,7 @@ export const updateSales = async (req, res) => {
 
     if (difference !== 0) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: newSystemClientId,
         accountId: newSystemAccountId,
         amount: updatedSale.totalAmountWithTax,
@@ -402,6 +417,7 @@ export const deleteSales = async (req, res) => {
     /* LEDGER */
     if (client) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: client._id,
         accountId: client.accountId,
         amount: totalAmount,
@@ -419,6 +435,7 @@ export const deleteSales = async (req, res) => {
 
     if (client) {
       await addClientLedgerEntry({
+        userId: req.userId,
         clientId: systemClientId,
         accountId: systemAccountId,
         amount: totalAmount,
