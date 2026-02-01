@@ -1,6 +1,6 @@
 import express from 'express'
 import { createSales, deleteSales, getAllSales, getSalesById, updateSales } from './salesController.js'
-import { authMiddleware } from '../../Middleware/authMiddleware.js'
+import { authMiddleware } from '../../middleware/authMiddleware.js'
 
 const salesRouter = express.Router()
 
