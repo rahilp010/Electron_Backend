@@ -16,7 +16,6 @@ import analyticsRouter from './API/analytics/analyticsRouter.js';
 import openSalesPDFRouter from './API/utils/pdf.js';
 import pendingReport from './API/utils/pendingReportController.js';
 import authRouter from './API/auth/authRouter.js';
-// import authRouter from './API/auth/authRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
