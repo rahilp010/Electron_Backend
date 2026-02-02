@@ -77,8 +77,9 @@ const saleSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-saleSchema.index({ clientId: 1, statusOfTransaction: 1 });
-saleSchema.index({ productId: 1, createdAt: -1 });
+saleSchema.index({ userId: 1, createdAt: -1 });
+saleSchema.index({ clientId: 1 });
+saleSchema.index({ productId: 1 });
 
 const Sales = mongoose.model("Sales", saleSchema);
 export default Sales;

@@ -45,9 +45,9 @@ const productSchema = new mongoose.Schema(
     },
     { timestamps: true }
 )
+
+productSchema.index({ userId: 1, createdAt: -1 });
 productSchema.index({ productName: "text" });
-productSchema.index({ createdAt: -1 });
-productSchema.index({ assetType: 1, clientName: 1 });
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;

@@ -10,11 +10,24 @@ import mongoose from "mongoose";
 /* ========================= GET ALL ========================= */
 export const getAllSales = async (req, res) => {
   try {
-    const page = Number(req.query.page || 1);
+    const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = 20;
     const skip = (page - 1) * limit;
-    
-    const sales = await Sales.find({})
+
+    const sales = await Sales.find(
+      { userId: req.userId },
+      {
+        clientId: 1,
+        productId: 1,
+        quantity: 1,
+        totalAmountWithTax: 1,
+        paidAmount: 1,
+        pendingAmount: 1,
+        statusOfTransaction: 1,
+        paymentMethod: 1,
+        createdAt: 1,
+      }
+    )
       .populate("clientId", "clientName")
       .populate("productId", "productName")
       .sort({ createdAt: -1 })
