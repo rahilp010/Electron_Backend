@@ -6,23 +6,33 @@ import generateAccountNumber from "../utils/generateAccountNumber.js";
 // import Ledger from "../bankAccounts/ladger/ladgerSchema.js";
 
 // ✅ Get all clients
-const getAllClients = async (req, res, next) => {
+const getAllClients = async (req, res) => {
     try {
-        const page = Number(req.query.page || 1);
+        const page = Math.max(Number(req.query.page) || 1, 1);
         const limit = 20;
         const skip = (page - 1) * limit;
 
-        const clients = await Client.find({ userId: req.userId })
-            .sort({ createdAt: 1 }) // ASC order by createdAt
+        const clients = await Client.find(
+            { userId: req.userId },
+            {
+                clientName: 1,
+                phoneNo: 1,
+                accountType: 1,
+                createdAt: 1,
+            }
+        )
+            .sort({ createdAt: 1 })
             .skip(skip)
             .limit(limit)
             .lean();
+
         res.status(200).json(clients);
     } catch (error) {
         console.error("❌ Error fetching clients:", error);
         res.status(500).json({ error: "Failed to fetch clients" });
     }
 };
+
 
 // ✅ Get client by ID
 const getClientById = async (req, res) => {

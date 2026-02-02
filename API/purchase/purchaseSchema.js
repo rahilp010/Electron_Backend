@@ -78,11 +78,9 @@ const purchaseSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-purchaseSchema.index({ createdAt: -1 });
-purchaseSchema.index({ clientId: 1, createdAt: -1 });
+purchaseSchema.index({ userId: 1, createdAt: -1 });
+purchaseSchema.index({ clientId: 1 });
 purchaseSchema.index({ productId: 1 });
-purchaseSchema.index({ statusOfTransaction: 1 });
-purchaseSchema.index({ paymentType: 1 });
 
 const Purchase = mongoose.model("Purchase", purchaseSchema);
 export default Purchase;

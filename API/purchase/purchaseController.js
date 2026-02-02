@@ -11,23 +11,38 @@ import { calculateTotals } from "../utils/calculateTotals.js";
 /* ========================= GET ALL ========================= */
 export const getAllPurchases = async (req, res) => {
   try {
-    const page = Number(req.query.page || 1);
+    const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = 20;
     const skip = (page - 1) * limit;
 
-    const purchases = await Purchase.find({})
-      .populate("clientId", "clientName")
-      .populate("productId", "productName")
+    const purchases = await Purchase.find(
+      { userId: req.userId },
+      {
+        clientId: 1,
+        productId: 1,
+        quantity: 1,
+        totalAmountWithTax: 1,
+        paidAmount: 1,
+        pendingAmount: 1,
+        statusOfTransaction: 1,
+        paymentMethod: 1,
+        createdAt: 1,
+      }
+    )
+      .populate('clientId', 'clientName')
+      .populate('productId', 'productName')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
+
     res.status(200).json(purchases);
   } catch (error) {
-    console.error("❌ Error fetching purchase:", error);
-    res.status(500).json({ error: "Failed to fetch purchases" });
+    console.error('❌ Error fetching purchases:', error);
+    res.status(500).json({ error: 'Failed to fetch purchases' });
   }
 };
+
 
 /* ========================= GET BY ID ========================= */
 export const getPurchaseById = async (req, res) => {
