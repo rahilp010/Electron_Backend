@@ -8,9 +8,6 @@ export const getPendingCollections = async (req, res) => {
             pendingAmount: { $gt: 0 },
         }).populate('clientId');
 
-        console.log('sales', sales);
-
-
         const totalPending = sales.reduce(
             (sum, s) => sum + (s.pendingAmount || 0),
             0

@@ -32,13 +32,11 @@ const getAllClients = async (req, res) => {
 const getClientById = async (req, res) => {
     try {
 
-        console.log("req.params.id", req.params.id);
         if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
             return res.status(400).json({ error: "Invalid client ID format" });
         }
 
         const client = await Client.findById(req.params.id);
-        console.log("client", client);
 
         if (!client) return res.status(404).json({ error: "Client not found" });
 
@@ -97,7 +95,6 @@ const createClient = async (req, res) => {
         await client.save()
 
         res.status(201).json({ message: "Client created successfully", client });
-        console.log("Client inserted successfully");
     } catch (error) {
         console.error("Error inserting client:", error);
         res.status(500).json({ error: "Failed to add client" });

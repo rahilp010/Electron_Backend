@@ -18,16 +18,10 @@ export const getSystemAccount = async (userId, type) => {
 
 export const getSystemClient = async (userId, type) => {
 
-    console.log("userId", userId);
-    console.log("type", type);
-
     const client = await Client.findOne({
         userId,
         accountType: type,
     }).lean();
-
-    console.log("client", client);
-
 
     if (!client) {
         throw new Error(`${type} client not found`);
