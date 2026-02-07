@@ -81,6 +81,7 @@ const createClient = async (req, res) => {
         })
 
         await Ledger.create({
+            userId: req.userId,
             accountId: account._id,
             clientId: client._id,
             entryType: openingBalance >= 0 ? 'debit' : 'credit',

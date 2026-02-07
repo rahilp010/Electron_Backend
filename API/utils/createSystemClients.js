@@ -36,6 +36,7 @@ export const createSystemClients = async (userId) => {
 
         // 3️⃣ Opening Ledger
         await Ledger.create({
+            userId,
             accountId: account._id,
             clientId: client._id,
             entryType: "debit",

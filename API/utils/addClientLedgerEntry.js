@@ -3,6 +3,7 @@ import Ledger from "../bankAccounts/ledger/ledgerSchema.js";
 
 
 const addClientLedgerEntry = async ({
+    userId,
     clientId,
     accountId,
     amount,
@@ -24,6 +25,7 @@ const addClientLedgerEntry = async ({
     }
 
     await Ledger.create({
+        userId,
         clientId,
         accountId,
         entryType,

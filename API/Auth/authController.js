@@ -2,10 +2,6 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "./userSchema.js";
 import { config } from "../../config/config.js";
-import generateAccountNumber from "../utils/generateAccountNumber.js";
-import Account from "../bankAccounts/accounts/accountSchema.js";
-import Ledger from "../bankAccounts/ledger/ledgerSchema.js";
-import Client from "../clients/clientSchema.js";
 import { createSystemClients } from "../utils/createSystemClients.js";
 
 const JWT_SECRET = config.jwtSecret;

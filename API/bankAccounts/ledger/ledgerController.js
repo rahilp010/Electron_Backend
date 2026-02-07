@@ -11,8 +11,12 @@ const getLedgerByAccount = async (req, res) => {
       return res.status(400).json({ error: 'Invalid account ID' });
     }
 
-    const ledger = await Ledger.find({ accountId })
-      .sort({ date: 1, createdAt: 1 });
+    const ledger = await Ledger.find({
+      accountId,
+      userId: req.userId,
+    })
+      .sort({ date: 1, createdAt: 1 })
+      .lean();
 
     res.status(200).json(ledger);
   } catch (error) {
@@ -39,7 +43,11 @@ const addLedgerEntry = async (req, res) => {
       return res.status(400).json({ error: 'Invalid entry type' });
     }
 
-    const account = await Account.findById(accountId);
+    const account = await Account.findOne({
+      _id: accountId,
+      userId: req.userId,
+    });
+
     if (!account) {
       return res.status(404).json({ error: 'Account not found' });
     }
@@ -53,6 +61,7 @@ const addLedgerEntry = async (req, res) => {
 
     /* 🧾 CREATE LEDGER ENTRY */
     const ledger = await Ledger.create({
+      userId: req.userId,
       accountId,
       clientId,
       entryType,
@@ -82,6 +91,7 @@ const getTransferHistory = async (req, res) => {
     const { accountId } = req.query;
 
     const filter = {
+      userId: req.userId,
       referenceType: 'Transfer',
     };
 
@@ -93,7 +103,8 @@ const getTransferHistory = async (req, res) => {
     const history = await Ledger.find(filter)
       .populate('accountId', 'accountName')
       .populate('clientId', 'clientName')
-      .sort({ date: -1, createdAt: -1 });
+      .sort({ date: -1, createdAt: -1 })
+      .lean();
 
     res.status(200).json(history);
   } catch (error) {
@@ -106,8 +117,12 @@ const getClientLedger = async (req, res) => {
   try {
     const { clientId } = req.params;
 
-    const ledger = await Ledger.find({ clientId })
-      .sort({ date: 1, createdAt: 1 });
+    const ledger = await Ledger.find({
+      clientId,
+      userId: req.userId,
+    })
+      .sort({ date: 1, createdAt: 1 })
+      .lean();
 
     res.status(200).json(ledger);
   } catch (error) {
@@ -121,12 +136,20 @@ const deleteLedgerEntry = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const entry = await Ledger.findById(id);
+    const entry = await Ledger.findOne({
+      _id: id,
+      userId: req.userId,
+    });
+
     if (!entry) {
       return res.status(404).json({ error: 'Ledger entry not found' });
     }
 
-    const account = await Account.findById(entry.accountId);
+    const account = await Account.findOne({
+      _id: entry.accountId,
+      userId: req.userId,
+    });
+
     if (!account) {
       return res.status(404).json({ error: 'Account not found' });
     }
@@ -167,7 +190,10 @@ const deleteMultipleLedgerEntries = async (req, res) => {
     }
 
     /* 1️⃣ Fetch ledger entries */
-    const entries = await Ledger.find({ _id: { $in: ids } }).session(session);
+    const entries = await Ledger.find({
+      _id: { $in: ids },
+      userId: req.userId,
+    }).session(session);
     if (!entries.length) {
       return res.status(404).json({ error: 'No ledger entries found' });
     }

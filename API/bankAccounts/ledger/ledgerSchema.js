@@ -2,6 +2,12 @@ import mongoose from 'mongoose';
 
 const ledgerSchema = new mongoose.Schema(
     {
+        userId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: 'User',
+            required: true,
+            index: true,
+        },
         accountId: {
             type: mongoose.Schema.Types.ObjectId,
             ref: 'Account',

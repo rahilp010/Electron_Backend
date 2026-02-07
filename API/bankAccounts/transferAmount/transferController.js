@@ -38,6 +38,7 @@ export const transferAmount = async (req, res) => {
 
     await Ledger.create(
       [{
+        userId: req.userId,
         accountId: fromAccount._id,
         clientId: fromAccount.clientId,
         entryType: 'debit',
@@ -54,6 +55,7 @@ export const transferAmount = async (req, res) => {
 
     await Ledger.create(
       [{
+        userId: req.userId,
         accountId: toAccount._id,
         clientId: toAccount.clientId,
         entryType: 'credit',
