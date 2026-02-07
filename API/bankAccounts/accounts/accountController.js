@@ -67,33 +67,69 @@ const updateAccount = async (req, res) => {
         const { id } = req.params;
         const { bankName, accountNumber, isActive } = req.body;
 
-        const update = {};
-        if (bankName !== undefined) update.bankName = bankName;
-        if (accountNumber !== undefined) update.accountNumber = accountNumber;
-        if (isActive !== undefined) update.isActive = isActive;
-
-        const account = await Account.findOneAndUpdate(
-            {
-                _id: id,
-                userId: req.userId,
-            },
-            { $set: update },
-            { new: true, lean: true }
-        );
+        const account = await Account.findOne({
+            _id: id,
+            userId: req.userId,
+        }).lean();
 
         if (!account) {
             return res.status(404).json({ error: 'Account not found' });
         }
 
+        const isSystemAccount =
+            account.accountType === 'Bank' || account.accountType === 'Cash';
+
+        const update = {};
+
+        /* ================= SYSTEM ACCOUNTS ================= */
+        if (isSystemAccount) {
+            // ✅ Allow bank name update only for Bank
+            if (account.accountType === 'Bank' && bankName !== undefined) {
+                update.bankName = bankName;
+            }
+
+            // ⚠️ Optional: allow account number update
+            if (accountNumber !== undefined) {
+                update.accountNumber = accountNumber;
+            }
+
+            // ❌ Never allow disabling system accounts
+            if (isActive === false) {
+                return res.status(400).json({
+                    error: 'Bank/Cash account cannot be deactivated',
+                });
+            }
+        }
+
+        /* ================= CLIENT ACCOUNTS ================= */
+        if (!isSystemAccount) {
+            if (isActive !== undefined) {
+                update.isActive = isActive;
+            }
+        }
+
+        // ❌ Guardrail
+        if (Object.keys(update).length === 0) {
+            return res.status(400).json({ error: 'No valid fields to update' });
+        }
+
+        const updatedAccount = await Account.findByIdAndUpdate(
+            id,
+            { $set: update },
+            { new: true, lean: true }
+        );
+
         res.status(200).json({
             message: 'Account updated successfully',
-            account,
+            account: updatedAccount,
         });
+
     } catch (error) {
         console.error('❌ Error updating account:', error);
         res.status(500).json({ error: 'Failed to update account' });
     }
 };
+
 
 
 const deleteAccount = async (req, res) => {

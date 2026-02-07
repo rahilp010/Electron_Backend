@@ -6,6 +6,7 @@ import { config } from '../../config/config.js';
 import { updateClientBalances } from "../utils/updateClientBalances.js";
 import { calculateTotals } from "../utils/calculateTotals.js";
 import mongoose from "mongoose";
+import { getSystemAccount, getSystemClient } from "../utils/getSystemData.js";
 
 /* ========================= GET ALL ========================= */
 export const getAllSales = async (req, res) => {
@@ -16,17 +17,17 @@ export const getAllSales = async (req, res) => {
 
     const sales = await Sales.find(
       { userId: req.userId },
-      {
-        clientId: 1,
-        productId: 1,
-        quantity: 1,
-        totalAmountWithTax: 1,
-        paidAmount: 1,
-        pendingAmount: 1,
-        statusOfTransaction: 1,
-        paymentMethod: 1,
-        createdAt: 1,
-      }
+      // {
+      //   clientId: 1,
+      //   productId: 1,
+      //   quantity: 1,
+      //   totalAmountWithTax: 1,
+      //   paidAmount: 1,
+      //   pendingAmount: 1,
+      //   statusOfTransaction: 1,
+      //   paymentMethod: 1,
+      //   createdAt: 1,
+      // }
     )
       .populate("clientId", "clientName")
       .populate("productId", "productName")
@@ -48,7 +49,7 @@ export const getSalesById = async (req, res) => {
     const { id } = req.params;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: "Invalid purchase ID" });
+      return res.status(400).json({ error: "Invalid sale ID" });
     }
 
     const sale = await Sales.findById(id)
@@ -156,7 +157,7 @@ export const createSales = async (req, res) => {
     /* LEDGER */
     await addClientLedgerEntry({
       userId: req.userId,
-      clientId,
+      clientId: client._id,
       accountId: client.accountId,
       amount: grandTotal,
       entryType: 'debit',
@@ -167,19 +168,19 @@ export const createSales = async (req, res) => {
     }).catch(console.error);
 
     const systemAccountId =
-      paymentMethod === 'Cash'
-        ? config.cashAccountId
-        : config.bankAccountId
+      paymentMethod === 'cash'
+        ? await getSystemAccount(req.userId, "Cash")
+        : await getSystemAccount(req.userId, "Bank");
 
     const systemClientId =
-      paymentMethod === 'Cash'
-        ? config.cashClientId
-        : config.bankClientId
+      paymentMethod === 'cash'
+        ? await getSystemClient(req.userId, "Cash")
+        : await getSystemClient(req.userId, "Bank");
 
     await addClientLedgerEntry({
       userId: req.userId,
-      clientId: systemClientId,
-      accountId: systemAccountId,
+      clientId: systemClientId._id,
+      accountId: systemAccountId._id,
       amount: grandTotal,
       entryType: 'credit',
       referenceType: 'Sales',
@@ -336,20 +337,20 @@ export const updateSales = async (req, res) => {
     }
 
     const oldSystemAccountId =
-      oldSale.paymentMethod === 'Cash'
-        ? config.cashAccountId
-        : config.bankAccountId
+      oldSale.paymentMethod === "cash"
+        ? await getSystemAccount(req.userId, "Cash")
+        : await getSystemAccount(req.userId, "Bank");
 
     const oldSystemClientId =
-      oldSale.paymentMethod === 'Cash'
-        ? config.cashClientId
-        : config.bankClientId
+      oldSale.paymentMethod === "cash"
+        ? await getSystemClient(req.userId, "Cash")
+        : await getSystemClient(req.userId, "Bank");
 
     if (difference !== 0) {
       await addClientLedgerEntry({
         userId: req.userId,
-        clientId: oldSystemClientId,
-        accountId: oldSystemAccountId,
+        clientId: oldSystemClientId._id,
+        accountId: oldSystemAccountId._id,
         amount: oldSale.totalAmountWithTax,
         entryType: 'debit',
         referenceType: 'Adjustment',
@@ -360,20 +361,20 @@ export const updateSales = async (req, res) => {
     }
 
     const newSystemAccountId =
-      updatedSale.paymentMethod === 'Cash'
-        ? config.cashAccountId
-        : config.bankAccountId
+      updateSales.paymentMethod === 'cash'
+        ? await getSystemAccount(req.userId, "Cash")
+        : await getSystemAccount(req.userId, "Bank");
 
     const newSystemClientId =
-      updatedSale.paymentMethod === 'Cash'
-        ? config.cashClientId
-        : config.bankClientId
+      updateSales.paymentMethod === 'cash'
+        ? await getSystemClient(req.userId, "Cash")
+        : await getSystemClient(req.userId, "Bank");
 
     if (difference !== 0) {
       await addClientLedgerEntry({
         userId: req.userId,
-        clientId: newSystemClientId,
-        accountId: newSystemAccountId,
+        clientId: newSystemClientId._id,
+        accountId: newSystemAccountId._id,
         amount: updatedSale.totalAmountWithTax,
         entryType: 'credit',
         referenceType: 'Adjustment',
@@ -442,15 +443,21 @@ export const deleteSales = async (req, res) => {
       });
     }
 
-    const systemAccountId = sale.paymentMethod === "Cash" ? config.cashAccountId : config.bankAccountId;
+    const systemAccountId =
+      sale.paymentMethod === "cash"
+        ? await getSystemAccount(req.userId, "Cash")
+        : await getSystemAccount(req.userId, "Bank");
 
-    const systemClientId = sale.paymentMethod === "Cash" ? config.cashClientId : config.bankClientId;
+    const systemClientId =
+      sale.paymentMethod === "cash"
+        ? await getSystemClient(req.userId, "Cash")
+        : await getSystemClient(req.userId, "Bank");
 
     if (client) {
       await addClientLedgerEntry({
         userId: req.userId,
-        clientId: systemClientId,
-        accountId: systemAccountId,
+        clientId: systemClientId._id,
+        accountId: systemAccountId._id,
         amount: totalAmount,
         entryType: "debit",
         referenceType: "Sales",

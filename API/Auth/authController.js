@@ -2,15 +2,20 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "./userSchema.js";
 import { config } from "../../config/config.js";
+import generateAccountNumber from "../utils/generateAccountNumber.js";
+import Account from "../bankAccounts/accounts/accountSchema.js";
+import Ledger from "../bankAccounts/ledger/ledgerSchema.js";
+import Client from "../clients/clientSchema.js";
+import { createSystemClients } from "../utils/createSystemClients.js";
 
 const JWT_SECRET = config.jwtSecret;
 
 /* ================= SIGN UP ================= */
 export const register = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, role, phone, avatar } = req.body;
 
-    if (!name || !email || !password)
+    if (!name || !email || !password || !phone)
       return res.status(400).json({ message: "All fields required" });
 
     const existingUser = await User.findOne({ email });
@@ -23,13 +28,19 @@ export const register = async (req, res) => {
       name,
       email,
       password: hashedPassword,
+      role,
+      phone,
+      avatar,
     });
+
+    await createSystemClients(user._id);
 
     res.status(201).json({
       message: "User registered successfully",
-      user: { id: user._id, name: user.name, email: user.email },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, avatar: user.avatar },
     });
   } catch (err) {
+    console.error("❌ Signup failed:", err);
     res.status(500).json({ message: "Signup failed" });
   }
 };
@@ -56,12 +67,46 @@ export const login = async (req, res) => {
 
     res.status(200).json({
       token,
-      user: { id: user._id, name: user.name, email: user.email },
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, avatar: user.avatar },
     });
   } catch (err) {
     res.status(500).json({ message: "Login failed" });
   }
 };
+
+export const updateProfile = async (req, res) => {
+  try {
+    const { name, phone, avatar } = req.body;
+
+    console.log(req.body);
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { name, phone, avatar },
+      { new: true }
+    );
+
+    console.log("user", user);
+
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.status(200).json({
+      _id: user._id,
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      avatar: user.avatar,
+      role: user.role,
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Failed to Update Account" });
+  }
+};
+
+
 
 
 export const logout = async (req, res) => {

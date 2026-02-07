@@ -24,6 +24,10 @@ const addClientLedgerEntry = async ({
         newBalance += amount;
     }
 
+    console.log("clientId", clientId);
+    console.log("accountId", accountId);
+
+
     await Ledger.create({
         clientId,
         accountId,
