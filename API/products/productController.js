@@ -3,16 +3,16 @@ import Product from "./productSchema.js";
 
 const getAllProducts = async (req, res) => {
     try {
-        const limit = 20;
-        const cursor = req.query.cursor;
+        if (!req.userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
 
-        const query = {
-            userId: req.userId,
-            ...(cursor && { createdAt: { $lt: new Date(cursor) } }),
-        };
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = 20;
+        const skip = (page - 1) * limit;
 
         const products = await Product.find(
-            query,
+            { userId: req.userId },
             {
                 productName: 1,
                 productPrice: 1,
@@ -22,17 +22,16 @@ const getAllProducts = async (req, res) => {
                 totalAmountWithTax: 1,
                 totalAmountWithoutTax: 1,
                 createdAt: 1,
-            },
+            }
         )
             .sort({ createdAt: -1 })
+            .skip(skip)
             .limit(limit)
             .lean();
 
-        res.status(200).json({
-            data: products,
-            nextCursor: products.at(-1)?.createdAt || null,
-        });
+        res.status(200).json(products);
     } catch (error) {
+        console.error('❌ Error fetching products:', error);
         res.status(500).json({ error: 'Failed to fetch products' });
     }
 };
