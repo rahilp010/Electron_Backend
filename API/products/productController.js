@@ -12,17 +12,7 @@ const getAllProducts = async (req, res) => {
         const skip = (page - 1) * limit;
 
         const products = await Product.find(
-            { userId: req.userId },
-            {
-                productName: 1,
-                productPrice: 1,
-                productQuantity: 1,
-                productType: 1,
-                assetType: 1,
-                totalAmountWithTax: 1,
-                totalAmountWithoutTax: 1,
-                createdAt: 1,
-            }
+            { userId: req.userId }
         )
             .sort({ createdAt: -1 })
             .skip(skip)
