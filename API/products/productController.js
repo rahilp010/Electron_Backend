@@ -7,19 +7,35 @@ const getAllProducts = async (req, res) => {
             return res.status(401).json({ error: 'Unauthorized' });
         }
 
-        const page = Math.max(Number(req.query.page) || 1, 1);
-        const limit = 20;
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
         const skip = (page - 1) * limit;
+        const search = req.query.search?.trim() || '';
 
-        const products = await Product.find(
-            { userId: req.userId }
-        )
-            .sort({ createdAt: -1 })
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        const query = {
+            userId: req.userId,
+            ...(search && {
+                productName: { $regex: search, $options: 'i' },
+            }),
+        };
 
-        res.status(200).json(products);
+        const [products, total] = await Promise.all([
+            Product.find(query)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+
+            Product.countDocuments(query),
+        ]);
+
+        res.status(200).json({
+            products,
+            page,
+            limit,
+            total,
+            hasMore: skip + products.length < total,
+        });
     } catch (error) {
         console.error('❌ Error fetching products:', error);
         res.status(500).json({ error: 'Failed to fetch products' });

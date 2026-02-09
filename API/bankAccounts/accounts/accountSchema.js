@@ -12,7 +12,7 @@ const accountSchema = new mongoose.Schema(
             sparse: true,
         },
         accountName: { type: String, required: true },
-        accountType: { type: String, enum: ['Creditor', 'Debtor', 'Bank', 'Cash'] },
+        accountType: { type: String, enum: ['Creditor', 'Debtor', 'Bank', 'Cash', 'Employee'] },
         openingBalance: { type: Number, default: 0 },
         currentBalance: { type: Number, default: 0 },
         bankName: { type: String, index: true },

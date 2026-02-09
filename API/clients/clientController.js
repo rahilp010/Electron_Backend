@@ -8,22 +8,43 @@ import generateAccountNumber from "../utils/generateAccountNumber.js";
 // ✅ Get all clients
 const getAllClients = async (req, res) => {
     try {
-        const page = Math.max(Number(req.query.page) || 1, 1);
-        const limit = 20;
+        if (!req.userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
         const skip = (page - 1) * limit;
+        const search = req.query.search?.trim() || '';
 
-        const clients = await Client.find(
-            { userId: req.userId }
-        )
-            .sort({ createdAt: 1 })
-            .skip(skip)
-            .limit(limit)
-            .lean();
+        /* 🔍 SEARCH QUERY */
+        const query = {
+            userId: req.userId,
+            ...(search && {
+                clientName: { $regex: search, $options: 'i' },
+            }),
+        };
 
-        res.status(200).json(clients);
+        const [clients, total] = await Promise.all([
+            Client.find(query)
+                .sort({ createdAt: -1 }) // newest first = better UX in picker
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+
+            Client.countDocuments(query),
+        ]);
+
+        res.status(200).json({
+            clients,
+            page,
+            limit,
+            total,
+            hasMore: skip + clients.length < total,
+        });
     } catch (error) {
-        console.error("❌ Error fetching clients:", error);
-        res.status(500).json({ error: "Failed to fetch clients" });
+        console.error('❌ Error fetching clients:', error);
+        res.status(500).json({ error: 'Failed to fetch clients' });
     }
 };
 

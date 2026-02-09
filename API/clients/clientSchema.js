@@ -36,7 +36,7 @@ const clientSchema = new mongoose.Schema(
         },
         accountType: {
             type: String,
-            enum: ['Creditor', 'Debtor', "Bank", "Cash"],
+            enum: ['Creditor', 'Debtor', "Bank", "Cash", "Employee"],
             required: true,
             default: 'Debtor',
             index: true,
