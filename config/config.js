@@ -8,6 +8,8 @@ const _config = {
     mongoURL: process.env.MONGO_CONNECTION_STRING,
     env: process.env.NODE_ENV,
     jwtSecret: process.env.JWT_SECRET,
+    versionAdminPassword: process.env.VERSION_ADMIN_PASSWORD,
+    versionAdminCookieName: process.env.VERSION_ADMIN_COOKIE_NAME || 'version_admin_session',
     cloudinaryCloudName: process.env.CLOUDINARY_CLOUDNAME,
     cloudinaryApiKey: process.env.CLOUDINARY_API_KEY,
     cloudinaryApiSecret: process.env.CLOUDINARY_API_SECRET,

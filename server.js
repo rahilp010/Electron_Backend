@@ -1,12 +1,14 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { config } from './config/config.js';
 import connectDB from './DB/db.js'
 import productRouter from './API/products/productRouter.js'
 import clientRouter from './API/clients/clientRouter.js'
 import path from 'path';
 import { fileURLToPath } from 'url';
-import versionController from './API/version/versionController.js';
+import { getVersionAdminPage } from './API/version/versionController.js';
+import versionRouter from './API/version/versionRouter.js';
 import purchaseRouter from './API/purchase/purchaseRouter.js';
 import salesRouter from './API/sales/salesRouter.js';
 import accountRouter from './API/bankAccounts/accounts/accountRouter.js';
@@ -39,9 +41,10 @@ const app = express();
     }));
 
     app.use(express.json());
+    app.use(cookieParser());
 
     app.get('/', (req, res) => {
-        res.status(200).json({ message: 'Welcome to the Electron API' });
+        getVersionAdminPage(req, res);
     })
     app.use('/api/products', productRouter);
     app.use('/api/clients', clientRouter);
@@ -51,7 +54,7 @@ const app = express();
     app.use('/api/ledger', ledgerRouter);
     app.use('/api/transfer', transferRouter)
     app.use('/api/analytics', analyticsRouter)
-    app.use('/api/version', versionController)
+    app.use('/api/version', versionRouter)
     app.use('/api/reports', pendingReport)
     app.use('/api/auth', authRouter)
     app.use('/updates', express.static(__dirname))
