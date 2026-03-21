@@ -56,7 +56,7 @@ const renderAdminPage = () => `
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Electron by Envy</title>
   <style>
     :root {
@@ -89,6 +89,7 @@ const renderAdminPage = () => `
       align-items: center;
       justify-content: center;
       -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
     }
 
     /* --- Landing Page Styles --- */
@@ -96,25 +97,29 @@ const renderAdminPage = () => `
       text-align: center;
       padding: 40px 20px;
       animation: fadeIn 0.6s ease-out;
+      width: 100%;
+      max-width: 800px;
     }
 
     .landing h1 {
-      font-size: clamp(2.5rem, 5vw, 4rem);
+      font-size: clamp(2rem, 8vw, 4rem);
       font-weight: 800;
       letter-spacing: -0.02em;
       margin-bottom: 16px;
       background: linear-gradient(135deg, #1A1D2D 0%, #4F46E5 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
+      line-height: 1.1;
     }
 
     .landing p {
-      font-size: 1.125rem;
+      font-size: clamp(1rem, 4vw, 1.125rem);
       color: var(--text-muted);
       margin-bottom: 40px;
       max-width: 500px;
       margin-left: auto;
       margin-right: auto;
+      line-height: 1.5;
     }
 
     .button-group {
@@ -127,13 +132,15 @@ const renderAdminPage = () => `
     /* --- Common Button Styles --- */
     button {
       border: none;
-      border-radius: 9999px; /* Pill shape */
+      border-radius: 9999px;
       padding: 14px 28px;
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
       font-family: inherit;
+      width: 100%;
+      max-width: 250px;
     }
 
     button:active {
@@ -171,7 +178,7 @@ const renderAdminPage = () => `
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: 20px;
+      padding: 16px;
       z-index: 100;
       opacity: 0;
       visibility: hidden;
@@ -187,12 +194,13 @@ const renderAdminPage = () => `
       background: var(--surface);
       width: 100%;
       max-width: 500px;
+      max-height: 90vh; /* Prevents vertical overflow */
       border-radius: 24px;
       box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-      position: relative;
+      display: flex;
+      flex-direction: column;
       transform: scale(0.95) translateY(10px);
       transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      overflow: hidden;
     }
 
     .modal-overlay.open .modal-content {
@@ -200,15 +208,16 @@ const renderAdminPage = () => `
     }
 
     .modal-header {
-      padding: 24px 32px 16px;
+      padding: 20px 24px 16px;
       border-bottom: 1px solid var(--input-bg);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-shrink: 0; /* Keeps header fixed */
     }
 
     .modal-header h2 {
-      font-size: 1.5rem;
+      font-size: 1.25rem;
       font-weight: 700;
     }
 
@@ -226,6 +235,7 @@ const renderAdminPage = () => `
       font-size: 1.2rem;
       transition: background 0.2s;
       padding: 0;
+      max-width: 32px;
     }
 
     .close-btn:hover {
@@ -234,14 +244,16 @@ const renderAdminPage = () => `
     }
 
     .modal-body {
-      padding: 32px;
+      padding: 24px;
+      overflow-y: auto; /* Makes body scrollable on small screens */
+      flex: 1;
     }
 
     /* --- Form Styles --- */
     form {
       display: flex;
       flex-direction: column;
-      gap: 20px;
+      gap: 16px;
     }
 
     label {
@@ -266,10 +278,11 @@ const renderAdminPage = () => `
       color: var(--text-main);
       transition: all 0.2s ease;
       outline: none;
+      -webkit-appearance: none; /* Prevents iOS styling issues */
     }
 
     textarea {
-      min-height: 120px;
+      min-height: 100px;
       resize: vertical;
     }
 
@@ -279,18 +292,16 @@ const renderAdminPage = () => `
       box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
     }
 
-    input::placeholder, textarea::placeholder {
-      color: #94A3B8;
-    }
-
     .form-actions {
       display: flex;
       gap: 12px;
       margin-top: 8px;
+      flex-wrap: wrap; /* Helps on very small screens */
     }
 
     .form-actions button {
       flex: 1;
+      max-width: 100%;
     }
 
     .message {
@@ -298,15 +309,15 @@ const renderAdminPage = () => `
       font-weight: 600;
       text-align: center;
       min-height: 20px;
-      margin-top: 8px;
+      margin-top: 4px;
     }
 
     .message.error { color: var(--error); }
     .message.success { color: var(--success); }
 
     .meta {
-      margin-top: 24px;
-      padding-top: 20px;
+      margin-top: 20px;
+      padding-top: 16px;
       border-top: 1px solid var(--input-bg);
       font-size: 0.75rem;
       color: var(--text-muted);
@@ -352,6 +363,10 @@ const renderAdminPage = () => `
 
       <div class="modal-body">
         
+        <div id="loadingState" class="message">
+          Checking secure session...
+        </div>
+
         <section id="loginCard" class="hidden">
           <form id="loginForm">
             <label>
@@ -404,7 +419,6 @@ const renderAdminPage = () => `
 
     openModalBtn.addEventListener('click', () => {
       modalOverlay.classList.add('open');
-      loadSession(); // Check session whenever modal opens
     });
 
     closeModalBtn.addEventListener('click', () => {
@@ -419,6 +433,7 @@ const renderAdminPage = () => `
     });
 
     // --- Original Application Logic ---
+    const loadingState = document.getElementById('loadingState');
     const loginCard = document.getElementById('loginCard');
     const editorCard = document.getElementById('editorCard');
     const loginForm = document.getElementById('loginForm');
@@ -445,6 +460,7 @@ const renderAdminPage = () => `
     };
 
     const showAuthenticatedState = async () => {
+      loadingState.classList.add('hidden');
       loginCard.classList.add('hidden');
       editorCard.classList.remove('hidden');
       setMessage(loginMessage, '', '');
@@ -452,12 +468,14 @@ const renderAdminPage = () => `
     };
 
     const showLoggedOutState = () => {
+      loadingState.classList.add('hidden');
       editorCard.classList.add('hidden');
       loginCard.classList.remove('hidden');
       setMessage(editorMessage, '', '');
       loginForm.reset();
     };
 
+    // RUNS IMMEDIATELY ON PAGE LOAD (Restores strict password protection flow)
     const loadSession = async () => {
       try {
         const response = await fetch('/api/version/admin/session');
@@ -468,10 +486,12 @@ const renderAdminPage = () => `
           showLoggedOutState();
         }
       } catch (e) {
-        // Fallback to logged out if API fails
-        showLoggedOutState();
+        showLoggedOutState(); // Fallback to login if API fails
       }
     };
+    
+    // Trigger session check immediately
+    loadSession();
 
     loginForm.addEventListener('submit', async (event) => {
       event.preventDefault();
@@ -538,8 +558,6 @@ const renderAdminPage = () => `
         console.error("Logout failed", e);
       }
     });
-
-    // Session is now loaded when the modal opens, not on page load.
   </script>
 </body>
 </html>
