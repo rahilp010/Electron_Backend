@@ -3,52 +3,52 @@ import { config } from '../../config/config.js';
 import VersionConfig from './versionSchema.js';
 
 const DEFAULT_VERSION_DATA = {
-  key: 'default',
-  version: '1.2.0',
-  url: 'https://www.dropbox.com/scl/fi/42gj17a24f2wgm1ie3nxl/electron.exe?rlkey=798i6xnpza1oai8e9fxkqopfg&st=dqfk33yz&dl=1',
-  status: 'success',
-  changeLog: 'Added Version Update',
+    key: 'default',
+    version: '1.2.0',
+    url: 'https://www.dropbox.com/scl/fi/42gj17a24f2wgm1ie3nxl/electron.exe?rlkey=798i6xnpza1oai8e9fxkqopfg&st=dqfk33yz&dl=1',
+    status: 'success',
+    changeLog: 'Added Version Update',
 };
 
 const COOKIE_MAX_AGE = 1000 * 60 * 60 * 12;
 
 const getCookieOptions = () => ({
-  httpOnly: true,
-  sameSite: 'lax',
-  secure: config.env === 'production',
-  maxAge: COOKIE_MAX_AGE,
-  path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: config.env === 'production',
+    maxAge: COOKIE_MAX_AGE,
+    path: '/',
 });
 
 const getVersionRecord = async () => {
-  let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
+    let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
 
-  if (!versionRecord) {
-    const created = await VersionConfig.create(DEFAULT_VERSION_DATA);
-    versionRecord = created.toObject();
-  }
+    if (!versionRecord) {
+        const created = await VersionConfig.create(DEFAULT_VERSION_DATA);
+        versionRecord = created.toObject();
+    }
 
-  return {
-    version: versionRecord.version,
-    url: versionRecord.url,
-    status: versionRecord.status || 'success',
-    changeLog: versionRecord.changeLog,
-  };
+    return {
+        version: versionRecord.version,
+        url: versionRecord.url,
+        status: versionRecord.status || 'success',
+        changeLog: versionRecord.changeLog,
+    };
 };
 
 const isAdminAuthenticated = (req) => {
-  try {
-    const token = req.cookies?.[config.versionAdminCookieName];
+    try {
+        const token = req.cookies?.[config.versionAdminCookieName];
 
-    if (!token) {
-      return false;
+        if (!token) {
+            return false;
+        }
+
+        const payload = jwt.verify(token, config.jwtSecret);
+        return payload?.scope === 'version-admin';
+    } catch (error) {
+        return false;
     }
-
-    const payload = jwt.verify(token, config.jwtSecret);
-    return payload?.scope === 'version-admin';
-  } catch (error) {
-    return false;
-  }
 };
 
 const renderAdminPage = () => `
@@ -57,203 +57,368 @@ const renderAdminPage = () => `
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Version Control Admin</title>
+  <title>Electron by Envy</title>
   <style>
     :root {
-      --bg: #f5efe4;
-      --panel: rgba(255, 250, 242, 0.92);
-      --accent: #b85042;
-      --accent-dark: #7b2d26;
-      --text: #1f1a17;
-      --muted: #6f6258;
-      --border: rgba(31, 26, 23, 0.12);
-      --success: #1f7a4d;
-      --error: #a12727;
-      --shadow: 0 24px 60px rgba(71, 47, 33, 0.18);
+      --bg-color: #F4F5F9;
+      --text-main: #1A1D2D;
+      --text-muted: #6E7587;
+      --primary: #1A1D2D;
+      --primary-hover: #3D445A;
+      --surface: #FFFFFF;
+      --input-bg: #F4F5F9;
+      --border: #E2E8F0;
+      --success: #10B981;
+      --error: #EF4444;
+      --font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
     }
 
-    * { box-sizing: border-box; }
+    * { 
+      box-sizing: border-box; 
+      margin: 0; 
+      padding: 0; 
+    }
 
     body {
-      margin: 0;
+      font-family: var(--font-family);
+      color: var(--text-main);
+      background-color: var(--bg-color);
       min-height: 100vh;
-      font-family: Georgia, "Times New Roman", serif;
-      color: var(--text);
-      background:
-        radial-gradient(circle at top left, rgba(184, 80, 66, 0.22), transparent 34%),
-        radial-gradient(circle at bottom right, rgba(136, 109, 84, 0.22), transparent 32%),
-        linear-gradient(135deg, #f9f3ea 0%, #efe2d0 100%);
-      display: grid;
-      place-items: center;
-      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      -webkit-font-smoothing: antialiased;
     }
 
-    .shell {
-      width: min(100%, 760px);
-      background: var(--panel);
-      border: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      border-radius: 24px;
-      overflow: hidden;
-      backdrop-filter: blur(10px);
+    /* --- Landing Page Styles --- */
+    .landing {
+      text-align: center;
+      padding: 40px 20px;
+      animation: fadeIn 0.6s ease-out;
     }
 
-    .hero {
-      padding: 28px 28px 18px;
-      background: linear-gradient(135deg, rgba(184, 80, 66, 0.14), rgba(123, 45, 38, 0.04));
-      border-bottom: 1px solid var(--border);
+    .landing h1 {
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, #1A1D2D 0%, #4F46E5 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
-    h1 {
-      margin: 0;
-      font-size: clamp(2rem, 4vw, 3rem);
-      line-height: 1;
+    .landing p {
+      font-size: 1.125rem;
+      color: var(--text-muted);
+      margin-bottom: 40px;
+      max-width: 500px;
+      margin-left: auto;
+      margin-right: auto;
     }
 
-    .sub {
-      margin: 12px 0 0;
-      color: var(--muted);
-      font-size: 1rem;
-    }
-
-    .content {
-      padding: 28px;
-    }
-
-    .card {
-      border: 1px solid var(--border);
-      border-radius: 18px;
-      padding: 20px;
-      background: rgba(255, 255, 255, 0.58);
-    }
-
-    form {
-      display: grid;
+    .button-group {
+      display: flex;
       gap: 16px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    /* --- Common Button Styles --- */
+    button {
+      border: none;
+      border-radius: 9999px; /* Pill shape */
+      padding: 14px 28px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-family: inherit;
+    }
+
+    button:active {
+      transform: scale(0.98);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: var(--text-main);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #F8FAFC;
+      border-color: #CBD5E1;
+    }
+
+    /* --- Modal Styles --- */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+      opacity: 0;
+      visibility: hidden;
+      transition: all 0.3s ease;
+    }
+
+    .modal-overlay.open {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .modal-content {
+      background: var(--surface);
+      width: 100%;
+      max-width: 500px;
+      border-radius: 24px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+      position: relative;
+      transform: scale(0.95) translateY(10px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow: hidden;
+    }
+
+    .modal-overlay.open .modal-content {
+      transform: scale(1) translateY(0);
+    }
+
+    .modal-header {
+      padding: 24px 32px 16px;
+      border-bottom: 1px solid var(--input-bg);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .close-btn {
+      background: var(--input-bg);
+      color: var(--text-muted);
+      border: none;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      font-size: 1.2rem;
+      transition: background 0.2s;
+      padding: 0;
+    }
+
+    .close-btn:hover {
+      background: #E2E8F0;
+      color: var(--text-main);
+    }
+
+    .modal-body {
+      padding: 32px;
+    }
+
+    /* --- Form Styles --- */
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
     }
 
     label {
-      display: grid;
+      display: flex;
+      flex-direction: column;
       gap: 8px;
+      font-size: 0.75rem;
       font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #3D445A;
     }
 
     input, textarea {
       width: 100%;
-      padding: 12px 14px;
-      font: inherit;
-      border-radius: 12px;
-      border: 1px solid rgba(31, 26, 23, 0.18);
-      background: rgba(255, 255, 255, 0.88);
-      color: var(--text);
+      padding: 14px 16px;
+      font-family: inherit;
+      font-size: 1rem;
+      border-radius: 16px;
+      border: 2px solid transparent;
+      background: var(--input-bg);
+      color: var(--text-main);
+      transition: all 0.2s ease;
+      outline: none;
     }
 
     textarea {
-      min-height: 140px;
+      min-height: 120px;
       resize: vertical;
     }
 
-    button {
-      border: 0;
-      border-radius: 999px;
-      padding: 12px 18px;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-      transition: transform 160ms ease, opacity 160ms ease;
+    input:focus, textarea:focus {
+      background: white;
+      border-color: #E0E7FF;
+      box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
     }
 
-    button:hover {
-      transform: translateY(-1px);
+    input::placeholder, textarea::placeholder {
+      color: #94A3B8;
     }
 
-    .primary {
-      background: var(--accent);
-      color: #fff9f6;
-    }
-
-    .secondary {
-      background: rgba(31, 26, 23, 0.08);
-      color: var(--text);
-    }
-
-    .actions {
+    .form-actions {
       display: flex;
       gap: 12px;
-      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    .form-actions button {
+      flex: 1;
     }
 
     .message {
-      min-height: 24px;
-      margin-top: 4px;
-      font-weight: 700;
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-align: center;
+      min-height: 20px;
+      margin-top: 8px;
     }
 
     .message.error { color: var(--error); }
     .message.success { color: var(--success); }
 
     .meta {
-      display: grid;
-      gap: 10px;
-      color: var(--muted);
-      margin-top: 16px;
-      font-size: 0.95rem;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--input-bg);
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
     }
 
     .hidden {
-      display: none;
+      display: none !important;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   </style>
 </head>
 <body>
-  <main class="shell">
-    <section class="hero">
-      <h1>Version Control</h1>
-      <p class="sub">Update your Electron app version, download URL, and changelog from this protected page.</p>
-    </section>
-    <section class="content">
-      <section id="loginCard" class="card hidden">
-        <form id="loginForm">
-          <label>
-            Password
-            <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter admin password" required />
-          </label>
-          <div class="actions">
-            <button class="primary" type="submit">Unlock editor</button>
-          </div>
-          <p id="loginMessage" class="message"></p>
-        </form>
-      </section>
 
-      <section id="editorCard" class="card hidden">
-        <form id="editorForm">
-          <label>
-            Version
-            <input id="version" name="version" type="text" placeholder="1.2.1" required />
-          </label>
-          <label>
-            Download URL
-            <input id="url" name="url" type="url" placeholder="https://example.com/app.exe" required />
-          </label>
-          <label>
-            Change Log
-            <textarea id="changeLog" name="changeLog" placeholder="Describe what changed in this release" required></textarea>
-          </label>
-          <div class="actions">
-            <button class="primary" type="submit">Save changes</button>
-            <button id="logoutButton" class="secondary" type="button">Logout</button>
-          </div>
-          <p id="editorMessage" class="message"></p>
-        </form>
-        <div class="meta">
-          <span>Public API: <code>/api/version</code></span>
-          <span>Changes are stored in MongoDB, so they persist on Vercel.</span>
-        </div>
-      </section>
-    </section>
+  <main class="landing">
+    <h1>Welcome to Electron</h1>
+    <p>by Envy. Manage your application distribution, versioning, and changelogs seamlessly.</p>
+    
+    <div class="button-group">
+      <button class="btn-secondary" onclick="alert('Download started!')">
+        Download App
+      </button>
+      <button class="btn-primary" id="openModalBtn">
+        Version Control
+      </button>
+    </div>
   </main>
 
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-content">
+      
+      <div class="modal-header">
+        <h2>Version Control</h2>
+        <button class="close-btn" id="closeModalBtn">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        
+        <section id="loginCard" class="hidden">
+          <form id="loginForm">
+            <label>
+              Admin Password
+              <input id="password" name="password" type="password" autocomplete="current-password" placeholder="Enter password to unlock" required />
+            </label>
+            <div class="form-actions">
+              <button class="btn-primary" type="submit">Unlock Editor</button>
+            </div>
+            <p id="loginMessage" class="message"></p>
+          </form>
+        </section>
+
+        <section id="editorCard" class="hidden">
+          <form id="editorForm">
+            <label>
+              Version Number
+              <input id="version" name="version" type="text" placeholder="e.g. 1.2.1" required />
+            </label>
+            <label>
+              Download URL
+              <input id="url" name="url" type="url" placeholder="https://example.com/app.exe" required />
+            </label>
+            <label>
+              Change Log
+              <textarea id="changeLog" name="changeLog" placeholder="Describe what changed in this release..." required></textarea>
+            </label>
+            <div class="form-actions">
+              <button class="btn-secondary" id="logoutButton" type="button">Logout</button>
+              <button class="btn-primary" type="submit">Save Changes</button>
+            </div>
+            <p id="editorMessage" class="message"></p>
+          </form>
+          
+          <div class="meta">
+            <span>Public API: <code>/api/version</code></span>
+            <span>Changes are stored securely in MongoDB.</span>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+
   <script>
+    // --- UI Logic (Modal) ---
+    const modalOverlay = document.getElementById('modalOverlay');
+    const openModalBtn = document.getElementById('openModalBtn');
+    const closeModalBtn = document.getElementById('closeModalBtn');
+
+    openModalBtn.addEventListener('click', () => {
+      modalOverlay.classList.add('open');
+      loadSession(); // Check session whenever modal opens
+    });
+
+    closeModalBtn.addEventListener('click', () => {
+      modalOverlay.classList.remove('open');
+    });
+
+    // Close modal on clicking outside the content box
+    modalOverlay.addEventListener('click', (e) => {
+      if (e.target === modalOverlay) {
+        modalOverlay.classList.remove('open');
+      }
+    });
+
+    // --- Original Application Logic ---
     const loginCard = document.getElementById('loginCard');
     const editorCard = document.getElementById('editorCard');
     const loginForm = document.getElementById('loginForm');
@@ -268,11 +433,15 @@ const renderAdminPage = () => `
     };
 
     const fillVersionForm = async () => {
-      const response = await fetch('/api/version');
-      const data = await response.json();
-      document.getElementById('version').value = data.version || '';
-      document.getElementById('url').value = data.url || '';
-      document.getElementById('changeLog').value = data.changeLog || '';
+      try {
+        const response = await fetch('/api/version');
+        const data = await response.json();
+        document.getElementById('version').value = data.version || '';
+        document.getElementById('url').value = data.url || '';
+        document.getElementById('changeLog').value = data.changeLog || '';
+      } catch (e) {
+        console.error("Failed to fetch version data", e);
+      }
     };
 
     const showAuthenticatedState = async () => {
@@ -290,38 +459,47 @@ const renderAdminPage = () => `
     };
 
     const loadSession = async () => {
-      const response = await fetch('/api/version/admin/session');
-      const data = await response.json();
-      if (data.authenticated) {
-        await showAuthenticatedState();
-      } else {
+      try {
+        const response = await fetch('/api/version/admin/session');
+        const data = await response.json();
+        if (data.authenticated) {
+          await showAuthenticatedState();
+        } else {
+          showLoggedOutState();
+        }
+      } catch (e) {
+        // Fallback to logged out if API fails
         showLoggedOutState();
       }
     };
 
     loginForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      setMessage(loginMessage, '', '');
+      setMessage(loginMessage, 'Authenticating...', '');
 
-      const response = await fetch('/api/version/admin/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: document.getElementById('password').value })
-      });
+      try {
+        const response = await fetch('/api/version/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: document.getElementById('password').value })
+        });
 
-      const data = await response.json();
-      if (!response.ok) {
-        setMessage(loginMessage, data.message || 'Login failed', 'error');
-        return;
+        const data = await response.json();
+        if (!response.ok) {
+          setMessage(loginMessage, data.message || 'Login failed', 'error');
+          return;
+        }
+
+        setMessage(loginMessage, '', ''); // Clear message on success
+        await showAuthenticatedState();
+      } catch (e) {
+        setMessage(loginMessage, 'Network error occurred', 'error');
       }
-
-      setMessage(loginMessage, 'Access granted.', 'success');
-      await showAuthenticatedState();
     });
 
     editorForm.addEventListener('submit', async (event) => {
       event.preventDefault();
-      setMessage(editorMessage, '', '');
+      setMessage(editorMessage, 'Saving...', '');
 
       const payload = {
         version: document.getElementById('version').value,
@@ -329,112 +507,123 @@ const renderAdminPage = () => `
         changeLog: document.getElementById('changeLog').value
       };
 
-      const response = await fetch('/api/version/admin', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      try {
+        const response = await fetch('/api/version/admin', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
 
-      const data = await response.json();
-      if (!response.ok) {
-        setMessage(editorMessage, data.message || 'Could not save changes', 'error');
-        return;
+        const data = await response.json();
+        if (!response.ok) {
+          setMessage(editorMessage, data.message || 'Could not save changes', 'error');
+          return;
+        }
+
+        setMessage(editorMessage, 'Version details updated successfully.', 'success');
+        await fillVersionForm();
+        
+        // Hide success message after 3 seconds
+        setTimeout(() => setMessage(editorMessage, '', ''), 3000);
+      } catch (e) {
+        setMessage(editorMessage, 'Network error occurred', 'error');
       }
-
-      setMessage(editorMessage, 'Version details updated successfully.', 'success');
-      await fillVersionForm();
     });
 
     logoutButton.addEventListener('click', async () => {
-      await fetch('/api/version/admin/logout', { method: 'POST' });
-      showLoggedOutState();
+      try {
+        await fetch('/api/version/admin/logout', { method: 'POST' });
+        showLoggedOutState();
+      } catch (e) {
+        console.error("Logout failed", e);
+      }
     });
 
-    loadSession();
+    // Session is now loaded when the modal opens, not on page load.
   </script>
 </body>
 </html>
 `;
 
 export const getVersion = async (req, res, next) => {
-  try {
-    const versionData = await getVersionRecord();
-    res.status(200).json(versionData);
-  } catch (error) {
-    next(error);
-  }
+    try {
+        const versionData = await getVersionRecord();
+        res.status(200).json(versionData);
+    } catch (error) {
+        next(error);
+    }
 };
 
 export const getVersionAdminPage = (req, res) => {
-  res.status(200).type('html').send(renderAdminPage());
+    res.status(200).type('html').send(renderAdminPage());
 };
 
 export const getAdminSession = (req, res) => {
-  res.status(200).json({ authenticated: isAdminAuthenticated(req) });
+    res.status(200).json({ authenticated: isAdminAuthenticated(req) });
 };
 
 export const loginVersionAdmin = (req, res) => {
-  const { password } = req.body ?? {};
+    const { password } = req.body ?? {};
 
-  if (!config.versionAdminPassword) {
-    return res.status(500).json({ message: 'VERSION_ADMIN_PASSWORD is not configured.' });
-  }
+    if (!config.versionAdminPassword) {
+        return res.status(500).json({ message: 'VERSION_ADMIN_PASSWORD is not configured.' });
+    }
 
-  if (!password || password !== config.versionAdminPassword) {
-    return res.status(401).json({ message: 'Incorrect password.' });
-  }
+    if (!password || password !== config.versionAdminPassword) {
+        return res.status(401).json({ message: 'Incorrect password.' });
+    }
 
-  const token = jwt.sign({ scope: 'version-admin' }, config.jwtSecret, { expiresIn: '12h' });
+    const token = jwt.sign({ scope: 'version-admin' }, config.jwtSecret, { expiresIn: '12h' });
 
-  res.cookie(config.versionAdminCookieName, token, getCookieOptions());
-  return res.status(200).json({ message: 'Login successful.' });
+    res.cookie(config.versionAdminCookieName, token, getCookieOptions());
+    return res.status(200).json({ message: 'Login successful.' });
 };
 
 export const logoutVersionAdmin = (req, res) => {
-  res.clearCookie(config.versionAdminCookieName, {
-    ...getCookieOptions(),
-    maxAge: undefined,
-  });
-  return res.status(200).json({ message: 'Logged out.' });
+    res.clearCookie(config.versionAdminCookieName, {
+        ...getCookieOptions(),
+        maxAge: undefined,
+    });
+    return res.status(200).json({ message: 'Logged out.' });
 };
 
 export const updateVersion = async (req, res, next) => {
-  try {
-    if (!isAdminAuthenticated(req)) {
-      return res.status(401).json({ message: 'Unauthorized.' });
+    try {
+        if (!isAdminAuthenticated(req)) {
+            return res.status(401).json({ message: 'Unauthorized.' });
+        }
+
+        const { version, url, changeLog } = req.body ?? {};
+
+        if (!version || !url || !changeLog) {
+            return res.status(400).json({ message: 'version, url, and changeLog are required.' });
+        }
+
+        const updated = await VersionConfig.findOneAndUpdate(
+            { key: 'default' },
+            {
+                key: 'default',
+                version: String(version).trim(),
+                url: String(url).trim(),
+                changeLog: String(changeLog).trim(),
+                status: 'success',
+            },
+            {
+                upsert: true,
+                new: true,
+                runValidators: true,
+                setDefaultsOnInsert: true,
+            }
+        ).lean();
+
+        return res.status(200).json({
+            message: 'Version updated successfully.',
+            version: updated.version,
+            url: updated.url,
+            status: updated.status,
+            changeLog: updated.changeLog,
+        });
+    } catch (error) {
+        next(error);
     }
-
-    const { version, url, changeLog } = req.body ?? {};
-
-    if (!version || !url || !changeLog) {
-      return res.status(400).json({ message: 'version, url, and changeLog are required.' });
-    }
-
-    const updated = await VersionConfig.findOneAndUpdate(
-      { key: 'default' },
-      {
-        key: 'default',
-        version: String(version).trim(),
-        url: String(url).trim(),
-        changeLog: String(changeLog).trim(),
-        status: 'success',
-      },
-      {
-        upsert: true,
-        new: true,
-        runValidators: true,
-        setDefaultsOnInsert: true,
-      }
-    ).lean();
-
-    return res.status(200).json({
-      message: 'Version updated successfully.',
-      version: updated.version,
-      url: updated.url,
-      status: updated.status,
-      changeLog: updated.changeLog,
-    });
-  } catch (error) {
-    next(error);
-  }
 };
