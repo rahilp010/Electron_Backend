@@ -5,10 +5,10 @@ import Account from '../accounts/accountSchema.js';
 /* ================= GET LEDGER BY ACCOUNT ================= */
 const getLedgerByAccount = async (req, res) => {
   try {
-    const { accountId } = req.params;
+    const { accountId } = req.query;
 
-    if (!mongoose.Types.ObjectId.isValid(accountId)) {
-      return res.status(400).json({ error: 'Invalid account ID' });
+    if (!accountId) {
+      return res.status(400).json({ error: 'Account ID is required' });
     }
 
     const ledger = await Ledger.find({

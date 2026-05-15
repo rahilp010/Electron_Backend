@@ -46,7 +46,8 @@ const clientSchema = new mongoose.Schema(
         salary: { type: Number, default: 0 },
         pendingAmount: { type: Number },
         paidAmount: { type: Number },
-        pendingFromOurs: { type: Number }
+        pendingFromOurs: { type: Number },
+        isSystem: { type: Boolean, default: false }
     },
     { timestamps: true }
 );

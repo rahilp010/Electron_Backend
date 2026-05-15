@@ -12,44 +12,59 @@ export const createSystemClients = async (userId) => {
     const results = {};
 
     for (const sys of systems) {
-        // 1️⃣ Create Client
-        const client = await Client.create({
-            clientName: `${sys.name} ACCOUNT`,
-            accountType: sys.type,
-            userId,
-            isSystem: true,
-        });
+        // 0️⃣ Check if already exists to avoid duplicates
+        let client = await Client.findOne({ userId, clientName: `${sys.name} ACCOUNT`, isSystem: true });
+        let account;
 
-        // 2️⃣ Create Account
-        const accountNumber = await generateAccountNumber();
+        if (client) {
+            account = await Account.findOne({ clientId: client._id });
+        } else {
+            // 1️⃣ Create Client
+            client = await Client.create({
+                clientName: `${sys.name} ACCOUNT`,
+                accountType: sys.type,
+                userId,
+                isSystem: true,
+            });
+        }
 
-        const account = await Account.create({
-            userId,
-            clientId: client._id,
-            accountName: `${sys.name} ACCOUNT`,
-            accountType: sys.type,
-            openingBalance: 0,
-            currentBalance: 0,
-            accountNumber,
-            isActive: true,
-        });
+        // 2️⃣ Create Account if missing
+        const accountNumber = client.accountNumber || await generateAccountNumber();
 
-        // 3️⃣ Opening Ledger
-        await Ledger.create({
-            userId,
-            accountId: account._id,
-            clientId: client._id,
-            entryType: "debit",
-            amount: 0,
-            balanceAfter: 0,
-            referenceType: "Opening",
-            narration: `Opening ${sys.type} Balance`,
-        });
+        if (!account) {
+            account = await Account.create({
+                userId,
+                clientId: client._id,
+                accountName: `${sys.name} ACCOUNT`,
+                accountType: sys.type,
+                openingBalance: 0,
+                currentBalance: 0,
+                accountNumber,
+                isActive: true,
+            });
+        }
+
+        // 3️⃣ Opening Ledger (only if none exists)
+        const existingLedger = await Ledger.findOne({ accountId: account._id, referenceType: "Opening" });
+        if (!existingLedger) {
+            await Ledger.create({
+                userId,
+                accountId: account._id,
+                clientId: client._id,
+                entryType: "debit",
+                amount: 0,
+                balanceAfter: 0,
+                referenceType: "Opening",
+                narration: `Opening ${sys.type} Balance`,
+            });
+        }
 
         // 4️⃣ Link back
-        client.accountId = account._id;
-        client.accountNumber = accountNumber;
-        await client.save();
+        if (!client.accountId || !client.accountNumber) {
+            client.accountId = account._id;
+            client.accountNumber = accountNumber;
+            await client.save();
+        }
 
         results[sys.type] = {
             clientId: client._id,

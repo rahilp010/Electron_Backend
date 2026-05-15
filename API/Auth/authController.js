@@ -61,6 +61,9 @@ export const login = async (req, res) => {
       expiresIn: "7d",
     });
 
+    // ✅ Ensure system accounts exist (for older users)
+    await createSystemClients(user._id).catch(err => console.error("Error creating system clients on login:", err));
+
     res.status(200).json({
       token,
       user: { id: user._id, name: user.name, email: user.email, role: user.role, phone: user.phone, avatar: user.avatar },

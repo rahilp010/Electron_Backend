@@ -13,6 +13,6 @@ versionRouter.get('/', getVersion);
 versionRouter.get('/admin/session', getAdminSession);
 versionRouter.post('/admin/login', loginVersionAdmin);
 versionRouter.post('/admin/logout', logoutVersionAdmin);
-versionRouter.put('/admin', updateVersion);
+versionRouter.post('/update', updateVersion);
 
 export default versionRouter;

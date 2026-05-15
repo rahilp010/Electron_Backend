@@ -82,9 +82,9 @@ const createClient = async (req, res) => {
             pageName,
             isEmployee,
             salary,
-            pendingAmount,
-            paidAmount,
-            pendingFromOurs,
+            pendingAmount: accountType === 'Debtor' ? openingBalance : (pendingAmount || 0),
+            paidAmount: paidAmount || 0,
+            pendingFromOurs: accountType === 'Creditor' ? openingBalance : (pendingFromOurs || 0),
             userId: req.userId,
         })
 
@@ -105,7 +105,7 @@ const createClient = async (req, res) => {
             userId: req.userId,
             accountId: account._id,
             clientId: client._id,
-            entryType: openingBalance >= 0 ? 'debit' : 'credit',
+            entryType: accountType === 'Creditor' ? 'credit' : 'debit',
             amount: Math.abs(openingBalance),
             balanceAfter: openingBalance,
             referenceType: 'Opening',
