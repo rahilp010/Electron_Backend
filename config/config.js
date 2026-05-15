@@ -19,6 +19,7 @@ const _config = {
     bankAccountId: process.env.BANK_ACCOUNT_ID,
     cashClientId: process.env.CASH_CLIENT_ID,
     bankClientId: process.env.BANK_CLIENT_ID,
+    activationAdminSecret: process.env.ACTIVATION_ADMIN_SECRET,
 }
 
 export const config = Object.freeze(_config)
