@@ -1,6 +1,18 @@
 import jwt from 'jsonwebtoken';
+import cloudinaryPkg from 'cloudinary';
 import { config } from '../../config/config.js';
 import VersionConfig from './versionSchema.js';
+
+const { v2: cloudinary, utils: cloudinaryUtils } = cloudinaryPkg;
+
+if (config.cloudinaryCloudName && config.cloudinaryApiKey && config.cloudinaryApiSecret) {
+  cloudinary.config({
+    cloud_name: config.cloudinaryCloudName,
+    api_key: config.cloudinaryApiKey,
+    api_secret: config.cloudinaryApiSecret,
+    secure: true,
+  });
+}
 
 const DEFAULT_VERSION_DATA = {
   key: 'default',
@@ -11,6 +23,7 @@ const DEFAULT_VERSION_DATA = {
 };
 
 const COOKIE_MAX_AGE = 1000 * 60 * 60 * 12;
+const VERSION_UPLOAD_FOLDER = 'electron-backend-updates';
 
 const getCookieOptions = () => ({
   httpOnly: true,
@@ -34,6 +47,51 @@ const getVersionRecord = async () => {
     status: versionRecord.status || 'success',
     changeLog: versionRecord.changeLog,
   };
+};
+
+const sanitizeFileName = (fileName) => {
+  const safeName = String(fileName || 'electron-update.zip')
+    .trim()
+    .replace(/[^\w.\- ]+/g, '-')
+    .replace(/\s+/g, '-');
+
+  return safeName.toLowerCase().endsWith('.zip') ? safeName : `${safeName}.zip`;
+};
+
+const buildCloudinaryDownloadUrl = (secureUrl, fileName = '') => {
+  if (!secureUrl) {
+    return '';
+  }
+
+  if (secureUrl.includes('fl_attachment:')) {
+    return secureUrl;
+  }
+
+  const derivedName = fileName || (() => {
+    try {
+      const url = new URL(secureUrl);
+      return decodeURIComponent(url.pathname.split('/').pop() || 'electron-update.zip');
+    } catch (error) {
+      return 'electron-update.zip';
+    }
+  })();
+  const safeName = sanitizeFileName(derivedName);
+  const attachmentTransform = `fl_attachment:${encodeURIComponent(safeName)}`;
+
+  if (secureUrl.includes('/upload/')) {
+    return secureUrl.replace('/upload/', `/upload/${attachmentTransform}/`);
+  }
+
+  return secureUrl;
+};
+
+const isZipFile = (file) => {
+  if (!file) {
+    return false;
+  }
+
+  const lowerName = String(file.originalname || file.name || '').toLowerCase();
+  return lowerName.endsWith('.zip');
 };
 
 const isAdminAuthenticated = (req) => {
@@ -309,6 +367,68 @@ const renderAdminPage = (currentData) => `
       resize: vertical;
     }
 
+    .upload-box {
+      border: 1px dashed rgba(123, 162, 219, 0.45);
+      background: rgba(255, 255, 255, 0.04);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    }
+
+    .upload-box.dragover {
+      border-color: var(--accent-blue);
+      background: rgba(123, 162, 219, 0.12);
+      transform: translateY(-1px);
+    }
+
+    .upload-box-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .upload-box-copy {
+      font-size: 12px;
+      color: var(--text-dim);
+      line-height: 1.5;
+    }
+
+    .upload-file-name {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--accent-blue);
+      word-break: break-word;
+    }
+
+    .upload-actions {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .upload-actions .btn {
+      flex: 0 0 auto;
+    }
+
+    .mini-btn {
+      padding: 10px 14px;
+      font-size: 11px;
+    }
+
+    .download-link-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .download-link-row .form-input {
+      flex: 1;
+    }
+
     .modal-actions {
       display: flex;
       gap: 12px;
@@ -471,6 +591,31 @@ const renderAdminPage = (currentData) => `
       </div>
 
       <div class="form-group">
+        <label class="form-label">Upload ZIP</label>
+        <input type="file" id="zipFileInput" accept=".zip,application/zip" hidden>
+        <div id="uploadBox" class="upload-box" role="button" tabindex="0">
+          <div class="upload-box-title">Drop your ZIP here or browse</div>
+          <div class="upload-box-copy">
+            The file uploads directly to Cloudinary, so it works reliably on Vercel without storing the ZIP on the server.
+          </div>
+          <div id="selectedFileName" class="upload-file-name">No file selected</div>
+          <div class="upload-actions">
+            <button type="button" class="btn btn-secondary mini-btn" id="browseZipBtn">Choose File</button>
+            <button type="button" class="btn btn-primary mini-btn" id="uploadZipBtn">Upload ZIP & Generate Link</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Auto-Download Link</label>
+        <div class="download-link-row">
+          <input type="text" id="generatedDownloadUrl" class="form-input" value="${currentData.url}" readonly>
+          <button type="button" class="btn btn-secondary mini-btn" id="copyDownloadUrlBtn">Copy</button>
+          <a id="openDownloadLink" class="btn btn-primary mini-btn" href="${currentData.url}" target="_blank" rel="noopener noreferrer">Open</a>
+        </div>
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Change Log</label>
         <textarea id="changeLog" class="form-input form-textarea">${currentData.changeLog}</textarea>
       </div>
@@ -495,6 +640,17 @@ const renderAdminPage = (currentData) => `
 
     const submitUpdateBtn = document.getElementById('submitUpdate');
     const updateStatus = document.getElementById('updateStatus');
+    const downloadUrlInput = document.getElementById('downloadUrl');
+    const zipFileInput = document.getElementById('zipFileInput');
+    const uploadBox = document.getElementById('uploadBox');
+    const browseZipBtn = document.getElementById('browseZipBtn');
+    const uploadZipBtn = document.getElementById('uploadZipBtn');
+    const selectedFileName = document.getElementById('selectedFileName');
+    const generatedDownloadUrl = document.getElementById('generatedDownloadUrl');
+    const copyDownloadUrlBtn = document.getElementById('copyDownloadUrlBtn');
+    const openDownloadLink = document.getElementById('openDownloadLink');
+
+    let selectedZipFile = null;
 
     // Open password modal on click
     openUpdateBtn.addEventListener('click', () => {
@@ -547,11 +703,177 @@ const renderAdminPage = (currentData) => `
       if (e.key === 'Enter') handleLogin();
     });
 
+    function setStatus(message, type = 'error') {
+      updateStatus.innerText = message;
+      updateStatus.className = 'status-msg ' + type;
+    }
+
+    function updateSelectedFile(file) {
+      selectedZipFile = file || null;
+      selectedFileName.innerText = selectedZipFile ? selectedZipFile.name : 'No file selected';
+    }
+
+    function isZipFile(file) {
+      return file && file.name && file.name.toLowerCase().endsWith('.zip');
+    }
+
+    browseZipBtn.addEventListener('click', () => zipFileInput.click());
+    uploadBox.addEventListener('click', (event) => {
+      if (event.target === browseZipBtn || event.target === uploadZipBtn) {
+        return;
+      }
+      zipFileInput.click();
+    });
+
+    downloadUrlInput.addEventListener('input', () => {
+      generatedDownloadUrl.value = downloadUrlInput.value;
+      openDownloadLink.href = downloadUrlInput.value;
+    });
+    uploadBox.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        zipFileInput.click();
+      }
+    });
+
+    zipFileInput.addEventListener('change', () => {
+      const file = zipFileInput.files && zipFileInput.files[0];
+      if (!file) {
+        updateSelectedFile(null);
+        return;
+      }
+
+      if (!isZipFile(file)) {
+        setStatus('Please select a .zip file.', 'error');
+        zipFileInput.value = '';
+        updateSelectedFile(null);
+        return;
+      }
+
+      setStatus('ZIP selected and ready to upload.', 'success');
+      updateSelectedFile(file);
+    });
+
+    uploadBox.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      uploadBox.classList.add('dragover');
+    });
+
+    uploadBox.addEventListener('dragleave', () => {
+      uploadBox.classList.remove('dragover');
+    });
+
+    uploadBox.addEventListener('drop', (event) => {
+      event.preventDefault();
+      uploadBox.classList.remove('dragover');
+
+      const file = event.dataTransfer.files && event.dataTransfer.files[0];
+      if (!file) {
+        return;
+      }
+
+      if (!isZipFile(file)) {
+        setStatus('Only .zip files are supported.', 'error');
+        return;
+      }
+
+      const transfer = new DataTransfer();
+      transfer.items.add(file);
+      zipFileInput.files = transfer.files;
+      updateSelectedFile(file);
+      setStatus('ZIP selected and ready to upload.', 'success');
+    });
+
+    async function uploadZipToCloudinary(file) {
+      const signatureResponse = await fetch('/api/version/admin/upload-signature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileName: file.name }),
+      });
+
+      const signatureData = await signatureResponse.json();
+
+      if (!signatureResponse.ok) {
+        throw new Error(signatureData.message || 'Could not prepare upload.');
+      }
+
+      const uploadUrl = 'https://api.cloudinary.com/v1_1/' + signatureData.cloudName + '/raw/upload';
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('api_key', signatureData.apiKey);
+      formData.append('timestamp', signatureData.timestamp);
+      formData.append('signature', signatureData.signature);
+      formData.append('folder', signatureData.folder);
+      formData.append('public_id', signatureData.publicId);
+      formData.append('overwrite', 'true');
+
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'POST',
+        body: formData,
+      });
+
+      const uploadData = await uploadResponse.json();
+
+      if (!uploadResponse.ok) {
+        throw new Error(uploadData.error?.message || 'ZIP upload failed.');
+      }
+
+      const downloadUrl = uploadData.secure_url.includes('/upload/')
+        ? uploadData.secure_url.replace(
+            '/upload/',
+            '/upload/fl_attachment:' + encodeURIComponent(file.name) + '/'
+          )
+        : uploadData.secure_url;
+
+      generatedDownloadUrl.value = downloadUrl;
+      downloadUrlInput.value = downloadUrl;
+      openDownloadLink.href = downloadUrl;
+
+      return {
+        downloadUrl,
+        assetId: uploadData.public_id,
+        fileName: file.name,
+      };
+    }
+
+    uploadZipBtn.addEventListener('click', async () => {
+      if (!selectedZipFile) {
+        setStatus('Choose a ZIP file first.', 'error');
+        return;
+      }
+
+      uploadZipBtn.innerText = 'Uploading...';
+      uploadZipBtn.disabled = true;
+      setStatus('Uploading ZIP and generating a download link...', 'success');
+
+      try {
+        const result = await uploadZipToCloudinary(selectedZipFile);
+        setStatus('Download link created for ' + result.fileName + '.', 'success');
+      } catch (error) {
+        setStatus(error.message || 'Upload failed.', 'error');
+      } finally {
+        uploadZipBtn.innerText = 'Upload ZIP & Generate Link';
+        uploadZipBtn.disabled = false;
+      }
+    });
+
+    copyDownloadUrlBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(generatedDownloadUrl.value);
+        copyDownloadUrlBtn.innerText = 'Copied';
+        setTimeout(() => {
+          copyDownloadUrlBtn.innerText = 'Copy';
+        }, 1200);
+      } catch (error) {
+        setStatus('Could not copy the download link.', 'error');
+      }
+    });
+
     // Handle Update Submission
     async function handleUpdate() {
       const data = {
         version: document.getElementById('newVersion').value,
-        url: document.getElementById('downloadUrl').value,
+        url: downloadUrlInput.value,
         changeLog: document.getElementById('changeLog').value
       };
 
@@ -650,6 +972,38 @@ export const logoutVersionAdmin = (req, res) => {
   return res.status(200).json({ message: 'Logged out.' });
 };
 
+export const getUploadSignature = (req, res) => {
+  if (!isAdminAuthenticated(req)) {
+    return res.status(401).json({ message: 'Unauthorized.' });
+  }
+
+  if (!config.cloudinaryCloudName || !config.cloudinaryApiKey || !config.cloudinaryApiSecret) {
+    return res.status(500).json({
+      message: 'Cloudinary credentials are not configured.',
+    });
+  }
+
+  const timestamp = Math.floor(Date.now() / 1000);
+  const publicId = `${Date.now()}`;
+  const paramsToSign = {
+    timestamp,
+    folder: VERSION_UPLOAD_FOLDER,
+    public_id: publicId,
+    overwrite: 'true',
+  };
+
+  const signature = cloudinaryUtils.api_sign_request(paramsToSign, config.cloudinaryApiSecret);
+
+  return res.status(200).json({
+    apiKey: config.cloudinaryApiKey,
+    cloudName: config.cloudinaryCloudName,
+    folder: VERSION_UPLOAD_FOLDER,
+    publicId,
+    signature,
+    timestamp,
+  });
+};
+
 export const updateVersion = async (req, res, next) => {
   try {
     if (!isAdminAuthenticated(req)) {
@@ -662,12 +1016,16 @@ export const updateVersion = async (req, res, next) => {
       return res.status(400).json({ message: 'version, url, and changeLog are required.' });
     }
 
+    const resolvedUrl = String(url).includes('cloudinary.com')
+      ? buildCloudinaryDownloadUrl(String(url).trim())
+      : String(url).trim();
+
     const updated = await VersionConfig.findOneAndUpdate(
       { key: 'default' },
       {
         key: 'default',
         version: String(version).trim(),
-        url: String(url).trim(),
+        url: resolvedUrl,
         changeLog: String(changeLog).trim(),
         status: 'success',
       },
