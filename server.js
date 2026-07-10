@@ -19,6 +19,7 @@ import pendingReport from './API/utils/pendingReportController.js';
 import authRouter from './API/Auth/authRouter.js';
 import reportRouter from './API/utils/reportController.js'
 import activationRouter from './API/activation/activationRouter.js';
+import syncRouter from './API/sync/syncRouter.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -59,6 +60,7 @@ const app = express();
     app.use('/api/reports', pendingReport)
     app.use('/api/auth', authRouter)
     app.use('/api/activation', activationRouter)
+    app.use('/api/sync', syncRouter)
     app.use('/updates', express.static(__dirname))
     app.use('/api/generate', reportRouter)
 

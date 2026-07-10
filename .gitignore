@@ -92,3 +92,6 @@ typings/
 
 # Electron-Forge
 out/
+
+*.md
+*.txt

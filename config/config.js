@@ -1,5 +1,5 @@
 import { config as dotenvConfig } from 'dotenv'
-dotenvConfig()
+dotenvConfig({ override: true })
 
 console.log('PORT from process.env:', process.env.PORT);
 
@@ -20,6 +20,9 @@ const _config = {
     cashClientId: process.env.CASH_CLIENT_ID,
     bankClientId: process.env.BANK_CLIENT_ID,
     activationAdminSecret: process.env.ACTIVATION_ADMIN_SECRET,
+    syncApiKey: process.env.SYNC_API_KEY,
+    electronHost: process.env.ELECTRON_HOST || 'localhost',
+    electronSyncPort: process.env.ELECTRON_SYNC_PORT || 5173,
 }
 
 export const config = Object.freeze(_config)
