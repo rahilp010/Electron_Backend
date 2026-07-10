@@ -8,7 +8,7 @@ import * as SQLite from 'expo-sqlite';
 
 class SyncService {
   constructor() {
-    this.apiBaseUrl = 'http://localhost:8001'; // e.g., 'http://192.168.1.100:3000' (Backend API, not Electron EXE)
+    this.apiBaseUrl = 'https://electron-by-envy.vercel.app/'; // e.g., 'http://192.168.1.100:3000' (Backend API, not Electron EXE)
     this.syncApiKey = process.env.SYNC_API_KEY; // Set from your .env file
     this.dbPath = null;
     this.database = null;
@@ -44,7 +44,7 @@ class SyncService {
 
       // Store sync token for subsequent calls
       this.syncToken = data.syncToken;
-      
+
       return data;
     } catch (error) {
       console.error('Sync initiation error:', error);
@@ -145,7 +145,7 @@ class SyncService {
   async downloadDatabase(syncToken) {
     try {
       const downloadUrl = `${this.apiBaseUrl}/api/sync/download/${syncToken}`;
-      
+
       // Create temp file path
       const tempDir = `${FileSystem.documentDirectory}temp_sync/`;
       const tempFilePath = `${tempDir}data_${Date.now()}.db`;
@@ -209,10 +209,10 @@ class SyncService {
 
       // For expo-sqlite, we need to use a different approach
       // This is a simplified version - you may need to adjust based on your data structure
-      
+
       // Alternative: Use SQL.js or a similar library for full SQLite file support
       console.log('Database file imported. Size:', fileContent.length);
-      
+
       return true;
     } catch (error) {
       console.error('Database import error:', error);
@@ -347,10 +347,10 @@ class SyncService {
 
     } catch (error) {
       console.error('Sync failed:', error);
-      
+
       // Cleanup on error
       await this.cleanup();
-      
+
       throw error;
     }
   }

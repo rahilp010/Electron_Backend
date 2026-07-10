@@ -1,6 +1,7 @@
 import puppeteer from 'puppeteer';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 export const generatePendingReportPDF = async (html, fileName) => {
     const browser = await puppeteer.launch({
@@ -10,7 +11,7 @@ export const generatePendingReportPDF = async (html, fileName) => {
     const page = await browser.newPage();
     await page.setContent(html, { waitUntil: 'networkidle0' });
 
-    const dir = path.join(process.cwd(), 'uploads');
+    const dir = path.join(os.tmpdir(), 'uploads');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir);
 
     const filePath = path.join(dir, fileName);

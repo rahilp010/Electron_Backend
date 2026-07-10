@@ -2,13 +2,14 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import os from 'os';
 import electronBridge from '../../services/electronBridge.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Local temp directory for storing files from Electron EXE
-const TEMP_DIR = path.join(__dirname, '../../temp_sync');
+const TEMP_DIR = path.join(os.tmpdir(), 'temp_sync');
 
 // Ensure temp directory exists
 if (!fs.existsSync(TEMP_DIR)) {

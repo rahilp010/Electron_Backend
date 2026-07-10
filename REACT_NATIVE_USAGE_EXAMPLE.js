@@ -15,7 +15,7 @@ const SyncExample = () => {
   // Configure the sync service (do this once in your app)
   useEffect(() => {
     syncService.configure(
-      'http://localhost:8001', // Replace with your backend URL
+      'https://electron-by-envy.vercel.app/', // Replace with your backend URL
       process.env.SYNC_API_KEY // Replace with your SYNC_API_KEY from .env
     );
   }, []);
@@ -30,7 +30,7 @@ const SyncExample = () => {
 
       // Perform complete sync
       const result = await syncService.performSync();
-      
+
       setSyncStatus('synced');
       setTables(result.tables);
       console.log('Sync completed successfully');
