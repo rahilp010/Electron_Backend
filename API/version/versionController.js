@@ -34,19 +34,29 @@ const getCookieOptions = () => ({
 });
 
 const getVersionRecord = async () => {
-  let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
+  try {
+    let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
 
-  if (!versionRecord) {
-    const created = await VersionConfig.create(DEFAULT_VERSION_DATA);
-    versionRecord = created.toObject();
+    if (!versionRecord) {
+      const created = await VersionConfig.create(DEFAULT_VERSION_DATA);
+      versionRecord = created.toObject();
+    }
+
+    return {
+      version: versionRecord.version,
+      url: versionRecord.url,
+      status: versionRecord.status || 'success',
+      changeLog: versionRecord.changeLog,
+    };
+  } catch (error) {
+    console.warn('⚠️ MongoDB query failed in getVersionRecord. Falling back to default data.', error.message);
+    return {
+      version: DEFAULT_VERSION_DATA.version,
+      url: DEFAULT_VERSION_DATA.url,
+      status: DEFAULT_VERSION_DATA.status || 'success',
+      changeLog: DEFAULT_VERSION_DATA.changeLog,
+    };
   }
-
-  return {
-    version: versionRecord.version,
-    url: versionRecord.url,
-    status: versionRecord.status || 'success',
-    changeLog: versionRecord.changeLog,
-  };
 };
 
 const sanitizeFileName = (fileName) => {
@@ -116,6 +126,7 @@ const renderAdminPage = (currentData) => `
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Electron by Envy | Admin</title>
+  <link rel="icon" type="image/png" href="/updates/services/Envy.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">

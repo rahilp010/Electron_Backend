@@ -29,7 +29,11 @@ const app = express();
 
 (async () => {
     console.log('🟢🟢 Starting server...🟢🟢');
-    await connectDB()
+    try {
+        await connectDB();
+    } catch (dbError) {
+        console.error('⚠️ Database connection failed. Running server in offline/local mode.', dbError.message);
+    }
 
     app.use(cors({
         origin: (origin, callback) => {
@@ -48,6 +52,9 @@ const app = express();
     app.get('/', (req, res) => {
         getVersionAdminPage(req, res);
     })
+    app.get('/favicon.ico', (req, res) => {
+        res.sendFile(path.join(__dirname, 'services', 'Envy.png'));
+    });
     app.use('/api/products', productRouter);
     app.use('/api/clients', clientRouter);
     app.use('/api/purchase', purchaseRouter);
