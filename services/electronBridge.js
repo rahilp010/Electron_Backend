@@ -160,6 +160,32 @@ class ElectronBridge {
   }
 
   /**
+   * Prepare database sync file (snapshot, encrypt, upload, signed URL)
+   */
+  async prepareSyncFile(requestId, deviceId) {
+    try {
+      const response = await this.request('/api/sync/create-temp-db', 'POST', { requestId, deviceId });
+      return response;
+    } catch (error) {
+      console.error('Failed to prepare sync file in Electron:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Cleanup temporary sync file on Supabase Storage
+   */
+  async cleanupSyncFile(requestId) {
+    try {
+      const response = await this.request(`/api/sync/cleanup-temp-db?requestId=${requestId}`, 'DELETE');
+      return response;
+    } catch (error) {
+      console.error('Failed to cleanup sync file in Electron:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Check if Electron EXE is available
    */
   async healthCheck() {
