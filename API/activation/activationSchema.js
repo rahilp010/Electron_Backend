@@ -32,6 +32,10 @@ const activationKeySchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    active: {
+      type: Boolean,
+      default: true,
+    },
     deviceId: {
       type: String,
       default: null,

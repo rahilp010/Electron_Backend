@@ -6,12 +6,16 @@ import {
   loginVersionAdmin,
   logoutVersionAdmin,
   updateVersion,
+  getTargetedVersions,
+  deleteTargetedVersion,
 } from './versionController.js';
 
 const versionRouter = express.Router();
 
 versionRouter.get('/', getVersion);
 versionRouter.get('/admin/session', getAdminSession);
+versionRouter.get('/admin/targeted', getTargetedVersions);
+versionRouter.delete('/admin/targeted/:id', deleteTargetedVersion);
 versionRouter.post('/admin/upload-signature', getUploadSignature);
 versionRouter.post('/admin/login', loginVersionAdmin);
 versionRouter.post('/admin/logout', logoutVersionAdmin);

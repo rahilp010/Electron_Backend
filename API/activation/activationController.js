@@ -28,8 +28,8 @@ export const validateKey = async (req, res, next) => {
       return res.status(200).json({ valid: false, reason: 'Invalid activation key.' });
     }
 
-    if (record.revoked) {
-      return res.status(200).json({ valid: false, reason: 'Key has been revoked.' });
+    if (record.revoked || record.active === false) {
+      return res.status(200).json({ valid: false, reason: 'Key has been deactivated or revoked by administrator.' });
     }
 
     if (record.expiry && new Date(record.expiry) < new Date()) {
@@ -70,8 +70,8 @@ export const activateKey = async (req, res, next) => {
       return res.status(200).json({ success: false, message: 'Invalid activation key.' });
     }
 
-    if (record.revoked) {
-      return res.status(200).json({ success: false, message: 'This key has been revoked.' });
+    if (record.revoked || record.active === false) {
+      return res.status(200).json({ success: false, message: 'This key has been deactivated or revoked by administrator.' });
     }
 
     if (record.expiry && new Date(record.expiry) < new Date()) {
@@ -122,12 +122,58 @@ export const listKeys = async (req, res, next) => {
         createdAt: k.createdAt,
         expiry: k.expiry,
         revoked: k.revoked,
+        active: k.active ?? true,
         deviceId: k.deviceId,
         activations: k.activations,
       };
     }
 
     return res.status(200).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ─────────────────────────────────────────────────────────────
+// POST /api/activation/keys/status  (admin only)
+// Body: { key, active, revoked }
+// Updates active/revoked status of an activation key.
+// ─────────────────────────────────────────────────────────────
+export const toggleKeyStatus = async (req, res, next) => {
+  try {
+    if (!isAdmin(req)) {
+      return res.status(401).json({ message: 'Unauthorized. Invalid admin secret.' });
+    }
+
+    const { key, active, revoked } = req.body ?? {};
+
+    if (!key) {
+      return res.status(400).json({ success: false, message: 'key is required.' });
+    }
+
+    const record = await ActivationKey.findOne({ key: key.toUpperCase().trim() });
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Key not found.' });
+    }
+
+    if (typeof active === 'boolean') {
+      record.active = active;
+    }
+
+    if (typeof revoked === 'boolean') {
+      record.revoked = revoked;
+    }
+
+    await record.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Key ${record.key} updated. Active: ${record.active}, Revoked: ${record.revoked}`,
+      key: record.key,
+      active: record.active,
+      revoked: record.revoked,
+    });
   } catch (error) {
     next(error);
   }

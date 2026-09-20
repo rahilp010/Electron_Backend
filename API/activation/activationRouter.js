@@ -6,6 +6,7 @@ import {
   revokeKey,
   createKey,
   bulkCreateKeys,
+  toggleKeyStatus,
 } from './activationController.js';
 
 const activationRouter = express.Router();
@@ -17,6 +18,7 @@ activationRouter.post('/activate', activateKey);
 // ── Admin endpoints (protected by x-admin-secret header) ──
 activationRouter.get('/keys', listKeys);
 activationRouter.post('/keys/revoke', revokeKey);
+activationRouter.post('/keys/status', toggleKeyStatus);
 activationRouter.post('/keys/create', createKey);
 activationRouter.post('/keys/bulk', bulkCreateKeys);
 

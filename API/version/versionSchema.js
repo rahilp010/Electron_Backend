@@ -28,6 +28,17 @@ const versionSchema = new mongoose.Schema(
       required: true,
       trim: true,
     },
+    targetKeys: [
+      {
+        type: String,
+        trim: true,
+        uppercase: true,
+      },
+    ],
+    active: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

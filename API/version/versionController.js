@@ -33,8 +33,28 @@ const getCookieOptions = () => ({
   path: '/',
 });
 
-const getVersionRecord = async () => {
+const getVersionRecord = async (activationKey = null) => {
   try {
+    if (activationKey) {
+      const cleanKey = String(activationKey).trim().toUpperCase();
+      const targetedRecord = await VersionConfig.findOne({
+        targetKeys: cleanKey,
+        active: { $ne: false },
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
+
+      if (targetedRecord) {
+        return {
+          version: targetedRecord.version,
+          url: targetedRecord.url,
+          status: targetedRecord.status || 'success',
+          changeLog: targetedRecord.changeLog,
+          isTargeted: true,
+        };
+      }
+    }
+
     let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
 
     if (!versionRecord) {
@@ -440,6 +460,11 @@ const renderAdminPage = (currentData) => `
       </div>
 
       <div class="form-group">
+        <label class="form-label">Target Activation Keys (Optional)</label>
+        <input type="text" id="targetKeys" class="form-input" placeholder="e.g. KEY1, KEY2 (Leave blank for Global Release)">
+      </div>
+
+      <div class="form-group">
         <label class="form-label">Change Log</label>
         <textarea id="changeLog" class="form-input form-textarea">${currentData.changeLog}</textarea>
       </div>
@@ -696,11 +721,12 @@ const renderAdminPage = (currentData) => `
       const data = {
         version: document.getElementById('newVersion').value,
         url: downloadUrlInput.value,
-        changeLog: document.getElementById('changeLog').value
+        changeLog: document.getElementById('changeLog').value,
+        targetKeys: document.getElementById('targetKeys').value
       };
 
       if (!data.version || !data.url || !data.changeLog) {
-        setStatus('All fields are required.', 'error'); return;
+        setStatus('All fields except target keys are required.', 'error'); return;
       }
 
       submitUpdateBtn.innerText = 'Processing...';
@@ -737,7 +763,8 @@ const renderAdminPage = (currentData) => `
 
 export const getVersion = async (req, res, next) => {
   try {
-    const versionData = await getVersionRecord();
+    const activationKey = req.query.key || req.headers['x-activation-key'] || req.body?.key;
+    const versionData = await getVersionRecord(activationKey);
     res.status(200).json(versionData);
   } catch (error) {
     next(error);
@@ -820,7 +847,7 @@ export const updateVersion = async (req, res, next) => {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
 
-    const { version, url, changeLog } = req.body ?? {};
+    const { version, url, changeLog, targetKeys } = req.body ?? {};
 
     if (!version || !url || !changeLog) {
       return res.status(400).json({ message: 'version, url, and changeLog are required.' });
@@ -829,6 +856,38 @@ export const updateVersion = async (req, res, next) => {
     const resolvedUrl = String(url).includes('cloudinary.com')
       ? buildCloudinaryDownloadUrl(String(url).trim())
       : String(url).trim();
+
+    let rawKeys = [];
+    if (Array.isArray(targetKeys)) {
+      rawKeys = targetKeys;
+    } else if (typeof targetKeys === 'string' && targetKeys.trim().length > 0) {
+      rawKeys = targetKeys.split(',').map((k) => k.trim());
+    }
+
+    const formattedTargetKeys = rawKeys.map((k) => String(k).trim().toUpperCase()).filter(Boolean);
+
+    if (formattedTargetKeys.length > 0) {
+      const uniqueKey = `targeted_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const created = await VersionConfig.create({
+        key: uniqueKey,
+        version: String(version).trim(),
+        url: resolvedUrl,
+        changeLog: String(changeLog).trim(),
+        targetKeys: formattedTargetKeys,
+        status: 'success',
+        active: true,
+      });
+
+      return res.status(200).json({
+        message: `Targeted update created successfully for key(s): ${formattedTargetKeys.join(', ')}`,
+        id: created._id,
+        version: created.version,
+        url: created.url,
+        changeLog: created.changeLog,
+        targetKeys: created.targetKeys,
+        isTargeted: true,
+      });
+    }
 
     const updated = await VersionConfig.findOneAndUpdate(
       { key: 'default' },
@@ -854,6 +913,31 @@ export const updateVersion = async (req, res, next) => {
       status: updated.status,
       changeLog: updated.changeLog,
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getTargetedVersions = async (req, res, next) => {
+  try {
+    if (!isAdminAuthenticated(req)) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+    const targeted = await VersionConfig.find({ key: { $ne: 'default' } }).sort({ createdAt: -1 }).lean();
+    return res.status(200).json(targeted);
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const deleteTargetedVersion = async (req, res, next) => {
+  try {
+    if (!isAdminAuthenticated(req)) {
+      return res.status(401).json({ message: 'Unauthorized.' });
+    }
+    const { id } = req.params;
+    await VersionConfig.findByIdAndDelete(id);
+    return res.status(200).json({ message: 'Targeted version rule deleted successfully.' });
   } catch (error) {
     next(error);
   }
