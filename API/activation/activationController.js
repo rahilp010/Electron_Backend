@@ -22,7 +22,12 @@ export const validateKey = async (req, res, next) => {
       return res.status(400).json({ valid: false, reason: 'key and deviceId are required.' });
     }
 
-    const record = await ActivationKey.findOne({ key: key.toUpperCase().trim() }).lean();
+    const cleanKey = String(key).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const rawKey = String(key).toUpperCase().trim();
+
+    const record = await ActivationKey.findOne({
+      $or: [{ key: rawKey }, { key: cleanKey }]
+    }).lean();
 
     if (!record) {
       return res.status(200).json({ valid: false, reason: 'Invalid activation key.' });
@@ -64,7 +69,12 @@ export const activateKey = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'key and deviceId are required.' });
     }
 
-    const record = await ActivationKey.findOne({ key: key.toUpperCase().trim() });
+    const cleanKey = String(key).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const rawKey = String(key).toUpperCase().trim();
+
+    const record = await ActivationKey.findOne({
+      $or: [{ key: rawKey }, { key: cleanKey }]
+    });
 
     if (!record) {
       return res.status(200).json({ success: false, message: 'Invalid activation key.' });
