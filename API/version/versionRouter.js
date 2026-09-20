@@ -2,6 +2,7 @@ import express from 'express';
 import {
   getAdminSession,
   getVersion,
+  getVersionAdminPage,
   getUploadSignature,
   loginVersionAdmin,
   logoutVersionAdmin,
@@ -13,6 +14,7 @@ import {
 const versionRouter = express.Router();
 
 versionRouter.get('/', getVersion);
+versionRouter.get('/admin', getVersionAdminPage);
 versionRouter.get('/admin/session', getAdminSession);
 versionRouter.get('/admin/targeted', getTargetedVersions);
 versionRouter.delete('/admin/targeted/:id', deleteTargetedVersion);
