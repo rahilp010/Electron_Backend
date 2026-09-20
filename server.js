@@ -1,3 +1,97 @@
+// ── Polyfill wmic.exe for Windows 11 (where wmic is deprecated/removed) ──
+// This MUST run before any imports that might spawn wmic.exe (e.g. puppeteer, open-wa).
+import child_process from 'child_process';
+
+if (process.platform === 'win32') {
+  const wbem = 'C:\\Windows\\System32\\wbem';
+  const sys32 = 'C:\\Windows\\System32';
+  if (!process.env.PATH?.includes(wbem)) {
+    process.env.PATH = `${wbem};${sys32};${process.env.PATH || ''}`;
+  }
+
+  const isWmic = (cmd) =>
+    typeof cmd === 'string' && (cmd.toLowerCase().includes('wmic') || cmd.endsWith('wmic.exe'));
+
+  const PS_ARGS = [
+    '-NoProfile',
+    '-Command',
+    'Get-CimInstance Win32_Process | Select-Object Name, ProcessId, ParentProcessId, Status | ConvertTo-Csv -NoTypeInformation'
+  ];
+
+  // Intercept spawn
+  const originalSpawn = child_process.spawn;
+  child_process.spawn = function (command, args, options) {
+    if (isWmic(command)) {
+      console.log('🔄 Intercepting wmic.exe spawn call, redirecting to PowerShell');
+      const psProcess = originalSpawn.call(this, 'powershell.exe', PS_ARGS, options);
+      psProcess.stderr = { on: () => {}, pipe: () => {} };
+      return psProcess;
+    }
+    return originalSpawn.apply(this, arguments);
+  };
+
+  // Intercept execFile
+  const originalExecFile = child_process.execFile;
+  child_process.execFile = function (file, args, options, callback) {
+    if (isWmic(file)) {
+      console.log('🔄 Intercepting wmic.exe execFile call, redirecting to PowerShell');
+      if (typeof options === 'function') {
+        callback = options;
+        options = {};
+      }
+      return originalExecFile.call(this, 'powershell.exe', PS_ARGS, options, callback);
+    }
+    return originalExecFile.apply(this, arguments);
+  };
+
+  // Intercept exec
+  const originalExec = child_process.exec;
+  child_process.exec = function (command, options, callback) {
+    if (isWmic(command)) {
+      console.log('🔄 Intercepting wmic.exe exec call, redirecting to PowerShell');
+      const psCommand = `powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Select-Object Name, ProcessId, ParentProcessId, Status | ConvertTo-Csv -NoTypeInformation"`;
+      return originalExec.call(this, psCommand, options, callback);
+    }
+    return originalExec.apply(this, arguments);
+  };
+
+  // Intercept execSync
+  const originalExecSync = child_process.execSync;
+  child_process.execSync = function (command, options) {
+    if (isWmic(command)) {
+      console.log('🔄 Intercepting wmic.exe execSync call, redirecting to PowerShell');
+      const psCommand = `powershell.exe -NoProfile -Command "Get-CimInstance Win32_Process | Select-Object Name, ProcessId, ParentProcessId, Status | ConvertTo-Csv -NoTypeInformation"`;
+      return originalExecSync.call(this, psCommand, options);
+    }
+    return originalExecSync.apply(this, arguments);
+  };
+}
+
+// Handle uncaught errors to prevent server crash from wmic.exe
+process.on('uncaughtException', (err) => {
+  if (err.message && err.message.includes('wmic.exe')) {
+    console.error('⚠️ WhatsApp initialization error (wmic.exe not found) - WhatsApp features will be unavailable');
+    console.error('💡 This is a known compatibility issue with newer Windows versions');
+    console.error('🔍 Stack trace to identify origin:');
+    console.error(err.stack);
+    return; // Don't crash the server
+  }
+  console.error('Uncaught Exception:', err);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  if (reason && reason.message && reason.message.includes('wmic.exe')) {
+    console.error('⚠️ WhatsApp initialization error (wmic.exe not found) - WhatsApp features will be unavailable');
+    console.error('💡 This is a known compatibility issue with newer Windows versions');
+    console.error('🔍 Stack trace to identify origin:');
+    console.error(reason.stack);
+    return; // Don't crash the server
+  }
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -19,6 +113,7 @@ import pendingReport from './API/utils/pendingReportController.js';
 import authRouter from './API/Auth/authRouter.js';
 import reportRouter from './API/utils/reportController.js'
 import activationRouter from './API/activation/activationRouter.js';
+import whatsappRouter from './API/whatsapp/whatsappRouter.js';
 import { initSyncSocket } from './services/syncSocket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -67,6 +162,7 @@ const app = express();
     app.use('/api/reports', pendingReport)
     app.use('/api/auth', authRouter)
     app.use('/api/activation', activationRouter)
+    app.use('/api/whatsapp', whatsappRouter)
     app.use('/updates', express.static(__dirname))
     app.use('/api/generate', reportRouter)
 
@@ -84,6 +180,12 @@ const app = express();
     const server = app.listen(config.port, '0.0.0.0', () => {
         console.log(`❗☑️ Server is running on port ${config.port}`);
     });
-    
+
     initSyncSocket(server);
-})()
+
+    // Keep the process alive with a setInterval
+    setInterval(() => {}, 1000);
+})().catch(err => {
+    console.error('Server startup error:', err);
+    process.exit(1);
+});

@@ -12,6 +12,8 @@
       "dev": "nodemon server.js"
    },
    "dependencies": {
+      "qrcode": "^1.5.4",
+      "whatsapp-web.js": "^1.34.7",
       "bcryptjs": "^3.0.2",
       "cloudinary": "^2.7.0",
       "cookie-parser": "^1.4.7",
