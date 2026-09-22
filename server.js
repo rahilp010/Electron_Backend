@@ -128,6 +128,17 @@ const app = express();
         await connectDB();
     } catch (dbError) {
         console.error('⚠️ Database connection failed. Running server in offline/local mode.', dbError.message);
+        // Retry in the background so the server comes up as soon as MongoDB is reachable
+        // (connectDB no longer caches the failed promise, so a retry is possible).
+        const retryDb = async () => {
+            try {
+                await connectDB();
+                console.log('✅ Database connected on retry.');
+            } catch {
+                setTimeout(retryDb, 10_000); // try again in 10s
+            }
+        };
+        setTimeout(retryDb, 10_000);
     }
 
     app.use(cors({

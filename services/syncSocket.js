@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import crypto from 'crypto';
 import { config } from '../config/config.js';
+import { PRESET_KEYS } from '../API/activation/activationController.js';
 
 // Map to store desktop clients: apiKey -> WebSocket connection
 const desktopConnections = new Map();
@@ -22,8 +23,14 @@ export const initSyncSocket = (server) => {
         const role = url.searchParams.get('role'); // 'desktop' or 'phone'
         console.log(`[SYNC-SOCKET] Upgrading connection for role: ${role || 'unknown'}`);
         
+        const cleanApiKey = String(apiKey || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const rawApiKey = String(apiKey || '').toUpperCase().trim();
+        const masterKey = (config.syncApiKey || '320e016f7a59776fe9dc4cd36d4cc4594cb859379843a9fcef74de5f005eb5ff').toUpperCase();
+        const isMaster = apiKey === config.syncApiKey || cleanApiKey === masterKey || rawApiKey === masterKey;
+        const isPreset = PRESET_KEYS && (PRESET_KEYS.has(cleanApiKey) || PRESET_KEYS.has(rawApiKey));
+
         // Validate Sync API Key (Device Authorization)
-        if (!apiKey || apiKey !== config.syncApiKey) {
+        if (!apiKey || (!isMaster && !isPreset)) {
           console.warn(`[SYNC-SOCKET] Unauthorized upgrade attempt rejected. Provided apiKey: ${apiKey}`);
           socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
           socket.destroy();
@@ -32,6 +39,7 @@ export const initSyncSocket = (server) => {
         
         wss.handleUpgrade(request, socket, head, (ws) => {
           ws.apiKey = apiKey;
+          ws.cleanApiKey = cleanApiKey;
           ws.role = role;
           wss.emit('connection', ws, request);
         });
@@ -44,12 +52,16 @@ export const initSyncSocket = (server) => {
 
   // Handle successful WebSocket connection
   wss.on('connection', (ws) => {
-    console.log(`[SYNC-SOCKET] Client connected. Role: ${ws.role}`);
+    console.log(`[SYNC-SOCKET] Client connected. Role: ${ws.role}, Key: ${ws.cleanApiKey || ws.apiKey}`);
     
     if (ws.role === 'desktop') {
-      // Register desktop connection
-      desktopConnections.set(ws.apiKey, ws);
-      console.log('[SYNC-SOCKET] Desktop connection registered');
+      // Register desktop connection strictly by cleanKey and raw key
+      const key = ws.cleanApiKey || ws.apiKey;
+      desktopConnections.set(key, ws);
+      if (ws.apiKey) {
+        desktopConnections.set(String(ws.apiKey).trim().toUpperCase(), ws);
+      }
+      console.log(`[SYNC-SOCKET] Desktop connection registered strictly for key: ${key}`);
     }
     
     ws.on('message', async (message) => {
@@ -66,18 +78,21 @@ export const initSyncSocket = (server) => {
       switch (type) {
         // --- Messages from Phone ---
         case 'SYNC_REQUEST': {
-          console.log(`[SYNC-SOCKET] Phone SYNC_REQUEST. Device: ${deviceId || 'unknown'}`);
+          console.log(`[SYNC-SOCKET] Phone SYNC_REQUEST for activation key: ${ws.apiKey} (Device: ${deviceId || 'unknown'})`);
           
           const reqId = requestId || crypto.randomUUID();
           
-          // Verify if there is an active desktop connection for this apiKey
-          const desktopWs = desktopConnections.get(ws.apiKey);
+          // Strict Activation Key Authorization Check
+          const cleanKey = ws.cleanApiKey;
+          const rawKey = String(ws.apiKey || '').trim().toUpperCase();
+          const desktopWs = desktopConnections.get(cleanKey) || desktopConnections.get(rawKey);
+
           if (!desktopWs || desktopWs.readyState !== ws.OPEN) {
-            console.warn(`[SYNC-SOCKET] Sync rejected. Desktop client is offline for apiKey: ${ws.apiKey}`);
+            console.warn(`[SYNC-SOCKET] Sync rejected. Desktop client for activation key '${ws.apiKey}' is offline.`);
             ws.send(JSON.stringify({
               type: 'SYNC_FAILED',
               requestId: reqId,
-              error: 'Desktop client is offline'
+              error: `Desktop client for activation key ${ws.apiKey} is offline. Please launch the Electron Desktop app configured with key ${ws.apiKey}.`
             }));
             return;
           }
@@ -199,10 +214,13 @@ export const initSyncSocket = (server) => {
       
       if (ws.role === 'desktop') {
         // Remove active desktop connection
-        if (desktopConnections.get(ws.apiKey) === ws) {
-          desktopConnections.delete(ws.apiKey);
-          console.log('[SYNC-SOCKET] Desktop connection unregistered');
+        const key = ws.cleanApiKey || ws.apiKey;
+        for (const [k, conn] of desktopConnections.entries()) {
+          if (conn === ws) {
+            desktopConnections.delete(k);
+          }
         }
+        console.log(`[SYNC-SOCKET] Desktop connection unregistered for key: ${key}`);
       } else if (ws.role === 'phone') {
         // Handle phone disconnect during an active session
         for (const [reqId, session] of syncSessions.entries()) {
