@@ -116,12 +116,19 @@ export async function initializeWhatsApp() {
         clientId: 'ENVY_BACKEND_SESSION',
         dataPath: sessionDir
       }),
+      webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+      },
       puppeteer: {
         headless: true,
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
           '--disable-gpu'
         ],
         ...(browserPath ? { executablePath: browserPath } : {})
@@ -285,6 +292,24 @@ export async function checkNumber(phone) {
   }
 }
 
+async function executeWithRetry(actionFn, retries = 1, delayMs = 1500) {
+  try {
+    return await actionFn()
+  } catch (err) {
+    const isContextError =
+      err.message?.includes('Execution context was destroyed') ||
+      err.message?.includes('ProtocolError') ||
+      err.message?.includes('Target closed')
+
+    if (isContextError && retries > 0) {
+      console.warn(`⚠️ Execution context reset detected. Retrying in ${delayMs}ms... (${err.message})`)
+      await new Promise((res) => setTimeout(res, delayMs))
+      return await executeWithRetry(actionFn, retries - 1, delayMs)
+    }
+    throw err
+  }
+}
+
 export async function sendMessage(phone, message, clientId = null) {
   const norm = normalizeWhatsAppNumber(phone)
   if (!norm.isValid) {
@@ -314,7 +339,7 @@ export async function sendMessage(phone, message, clientId = null) {
 
   return whatsappQueue.enqueue(async () => {
     try {
-      const sendResult = await waClient.sendMessage(norm.waId, message)
+      const sendResult = await executeWithRetry(() => waClient.sendMessage(norm.waId, message))
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
@@ -390,10 +415,12 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
   return whatsappQueue.enqueue(async () => {
     try {
       const media = MessageMedia.fromFilePath(filePath)
-      const sendResult = await waClient.sendMessage(norm.waId, media, {
-        caption: caption || undefined,
-        sendMediaAsDocument: true
-      })
+      const sendResult = await executeWithRetry(() =>
+        waClient.sendMessage(norm.waId, media, {
+          caption: caption || undefined,
+          sendMediaAsDocument: true
+        })
+      )
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
@@ -471,9 +498,11 @@ export async function sendImage(phone, filePath, caption = '', clientId = null) 
   return whatsappQueue.enqueue(async () => {
     try {
       const media = MessageMedia.fromFilePath(filePath)
-      const sendResult = await waClient.sendMessage(norm.waId, media, {
-        caption: caption || undefined
-      })
+      const sendResult = await executeWithRetry(() =>
+        waClient.sendMessage(norm.waId, media, {
+          caption: caption || undefined
+        })
+      )
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
