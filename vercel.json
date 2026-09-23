@@ -9,7 +9,8 @@
                     "API/**",
                     "config/**",
                     "DB/**",
-                    "middleware/**"
+                    "middleware/**",
+                    "services/**"
                 ]
             }
         }

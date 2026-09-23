@@ -67,13 +67,11 @@ if (process.platform === 'win32') {
   };
 }
 
-// Handle uncaught errors to prevent server crash from wmic.exe
+// Handle uncaught errors to prevent server crash from wmic.exe / whatsapp-web.js
 process.on('uncaughtException', (err) => {
-  if (err.message && err.message.includes('wmic.exe')) {
-    console.error('⚠️ WhatsApp initialization error (wmic.exe not found) - WhatsApp features will be unavailable');
-    console.error('💡 This is a known compatibility issue with newer Windows versions');
-    console.error('🔍 Stack trace to identify origin:');
-    console.error(err.stack);
+  const msg = err?.message || ''
+  if (msg.includes('wmic.exe') || msg.includes('LocalWebCache') || msg.includes('properties of null')) {
+    console.error('⚠️ WhatsApp non-fatal exception (suppressed):', msg);
     return; // Don't crash the server
   }
   console.error('Uncaught Exception:', err);
@@ -81,11 +79,9 @@ process.on('uncaughtException', (err) => {
 
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  if (reason && reason.message && reason.message.includes('wmic.exe')) {
-    console.error('⚠️ WhatsApp initialization error (wmic.exe not found) - WhatsApp features will be unavailable');
-    console.error('💡 This is a known compatibility issue with newer Windows versions');
-    console.error('🔍 Stack trace to identify origin:');
-    console.error(reason.stack);
+  const msg = reason?.message || String(reason || '')
+  if (msg.includes('wmic.exe') || msg.includes('LocalWebCache') || msg.includes('properties of null')) {
+    console.error('⚠️ WhatsApp non-fatal promise rejection (suppressed):', msg);
     return; // Don't crash the server
   }
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
@@ -114,6 +110,7 @@ import authRouter from './API/Auth/authRouter.js';
 import reportRouter from './API/utils/reportController.js'
 import activationRouter from './API/activation/activationRouter.js';
 import whatsappRouter from './API/whatsapp/whatsappRouter.js';
+import syncRouter from './API/sync/syncRouter.js';
 import { initSyncSocket } from './services/syncSocket.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -174,6 +171,7 @@ const app = express();
     app.use('/api/auth', authRouter)
     app.use('/api/activation', activationRouter)
     app.use('/api/whatsapp', whatsappRouter)
+    app.use('/api/sync', syncRouter)
     app.use('/updates', express.static(__dirname))
     app.use('/api/generate', reportRouter)
 

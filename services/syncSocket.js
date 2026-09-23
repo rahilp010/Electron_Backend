@@ -18,7 +18,8 @@ export const initSyncSocket = (server) => {
       const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
       console.log(`[SYNC-SOCKET] Upgrade request received. Path: ${url.pathname}, Query params: ${url.search}`);
       
-      if (url.pathname === '/sync') {
+      const cleanPathname = url.pathname.replace(/\/+$/, '');
+      if (cleanPathname === '/sync') {
         const apiKey = url.searchParams.get('apiKey');
         const role = url.searchParams.get('role'); // 'desktop' or 'phone'
         console.log(`[SYNC-SOCKET] Upgrading connection for role: ${role || 'unknown'}`);

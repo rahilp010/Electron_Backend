@@ -111,7 +111,9 @@ export async function initializeWhatsApp() {
         dataPath: sessionDir
       }),
       webVersionCache: {
-        type: 'local'
+        type: 'remote',
+        remotePath:
+          'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1018940842-alpha.html'
       },
       puppeteer: {
         headless: true,
