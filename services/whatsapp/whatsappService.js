@@ -110,11 +110,6 @@ export async function initializeWhatsApp() {
         clientId: 'ENVY_BACKEND_SESSION',
         dataPath: sessionDir
       }),
-      webVersionCache: {
-        type: 'remote',
-        remotePath:
-          'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1018940842-alpha.html'
-      },
       puppeteer: {
         headless: true,
         args: [
@@ -128,16 +123,6 @@ export async function initializeWhatsApp() {
     }
 
     waClient = new Client(clientOptions)
-
-    // Handle internal page errors on Puppeteer page to suppress benign WhatsApp Web toast/memoization errors
-    waClient.on('loading_screen', (percent, message) => {
-      if (waClient.pupPage) {
-        waClient.pupPage.removeAllListeners('pageerror')
-        waClient.pupPage.on('pageerror', (pageErr) => {
-          console.warn('WhatsApp Web internal page error (suppressed):', pageErr?.message || pageErr)
-        })
-      }
-    })
 
     // ── Event: QR Code ──
     waClient.on('qr', async (qr) => {
@@ -160,7 +145,7 @@ export async function initializeWhatsApp() {
     })
 
     // ── Event: Ready (fully connected) ──
-    waClient.on('ready', async () => {
+    waClient.on('ready', () => {
       console.log('✅ WhatsApp Backend client is ready')
       currentStatus = 'CONNECTED'
       currentQRCode = null
@@ -172,22 +157,6 @@ export async function initializeWhatsApp() {
         }
       } catch (e) {
         console.log('Could not fetch host phone number:', e.message)
-      }
-
-      // Suppress addToast & memoize errors inside WhatsApp Web page
-      try {
-        if (waClient.pupPage) {
-          await waClient.pupPage.evaluate(() => {
-            window.addEventListener('error', (e) => {
-              if (e.message && (e.message.includes('addToast') || e.message.includes('memoize') || e.message.includes('id property'))) {
-                e.stopImmediatePropagation()
-                e.preventDefault()
-              }
-            }, true)
-          })
-        }
-      } catch (e) {
-        // Ignore page evaluation errors
       }
     })
 
@@ -218,20 +187,6 @@ export async function initializeWhatsApp() {
     // The 'ready' event may or may not have fired yet (depends on session state).
     return { success: true, status: currentStatus, phone: connectedPhone }
   } catch (err) {
-    const isBenignError = err.message && (
-      err.message.includes('addToast') ||
-      err.message.includes('memoize') ||
-      err.message.includes('id property')
-    )
-
-    if (isBenignError) {
-      console.warn('⚠️ Suppressed non-fatal WhatsApp Web script error during init:', err.message)
-      if (currentStatus === 'INITIALIZING') {
-        currentStatus = 'CONNECTING'
-      }
-      return { success: true, status: currentStatus, phone: connectedPhone }
-    }
-
     console.error('❌ Failed to initialize WhatsApp client on backend:', err.message)
     lastError = err.message
     currentStatus = 'ERROR'
@@ -251,17 +206,11 @@ export async function initializeWhatsApp() {
 }
 
 export function getWhatsAppStatus() {
-  const isBenign = lastError && (
-    lastError.includes('addToast') ||
-    lastError.includes('memoize') ||
-    lastError.includes('id property')
-  )
-
   return {
     status: currentStatus,
     phone: connectedPhone,
     qr: currentQRCode,
-    error: isBenign ? null : lastError,
+    error: lastError,
     queueCount: whatsappQueue.getPendingCount()
   }
 }
@@ -330,60 +279,6 @@ export async function checkNumber(phone) {
   }
 }
 
-async function ensurePagePatched(client) {
-  if (!client || !client.pupPage) return
-  try {
-    await client.pupPage.evaluate(() => {
-      if (window.WWebJS) {
-        if (!window.WWebJS._patchedForAddToast) {
-          window.WWebJS._patchedForAddToast = true
-
-          // Patch window error handling
-          window.addEventListener('error', (e) => {
-            if (e.message && (e.message.includes('addToast') || e.message.includes('memoize') || e.message.includes('id property'))) {
-              e.stopImmediatePropagation()
-              e.preventDefault()
-            }
-          }, true)
-
-          // Patch processMediaData if available
-          if (typeof window.WWebJS.processMediaData === 'function') {
-            const origProcess = window.WWebJS.processMediaData
-            window.WWebJS.processMediaData = async function (...args) {
-              const res = await origProcess.apply(this, args)
-              if (res && typeof res === 'object' && !res.id) {
-                res.id = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
-              }
-              return res
-            }
-          }
-
-          // Patch sendMessage to handle missing id memoization error
-          if (typeof window.WWebJS.sendMessage === 'function') {
-            const origSend = window.WWebJS.sendMessage
-            window.WWebJS.sendMessage = async function (chat, content, options = {}) {
-              if (options.media && typeof options.media === 'object' && !options.media.id) {
-                options.media.id = 'media_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
-              }
-              try {
-                return await origSend.call(this, chat, content, options)
-              } catch (err) {
-                if (err && err.message && (err.message.includes('addToast') || err.message.includes('memoize') || err.message.includes('id property'))) {
-                  console.warn('[Patch] Safely intercepted addToast error in WWebJS.sendMessage')
-                  return { id: { _serialized: 'patched_' + Date.now() }, ack: 1 }
-                }
-                throw err
-              }
-            }
-          }
-        }
-      }
-    })
-  } catch (e) {
-    // Ignore page evaluation error during navigation
-  }
-}
-
 export async function sendMessage(phone, message, clientId = null) {
   const norm = normalizeWhatsAppNumber(phone)
   if (!norm.isValid) {
@@ -413,19 +308,7 @@ export async function sendMessage(phone, message, clientId = null) {
 
   return whatsappQueue.enqueue(async () => {
     try {
-      await ensurePagePatched(waClient)
-      let sendResult
-      try {
-        sendResult = await waClient.sendMessage(norm.waId, message)
-      } catch (err) {
-        if (err.message && (err.message.includes('addToast') || err.message.includes('memoize') || err.message.includes('id property'))) {
-          console.warn('⚠️ Intercepted addToast error in sendMessage text fallback:', err.message)
-          sendResult = { id: { _serialized: 'text_' + Date.now() } }
-        } else {
-          throw err
-        }
-      }
-
+      const sendResult = await waClient.sendMessage(norm.waId, message)
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
@@ -500,45 +383,11 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
 
   return whatsappQueue.enqueue(async () => {
     try {
-      await ensurePagePatched(waClient)
-
-      // Read file as buffer and create MessageMedia properly
-      const fileBuffer = fs.readFileSync(filePath)
-      const fileName = path.basename(filePath)
-      const media = new MessageMedia(
-        path.extname(filePath).replace('.', ''),
-        fileBuffer,
-        fileName,
-        caption || undefined
-      )
-
-      // Set id to prevent memoization errors
-      if (!media.id) {
-        media.id = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-      }
-
-      // Ensure media object has all required properties
-      if (!media.mimetype) {
-        media.mimetype = 'application/pdf'
-      }
-      if (!media.data) {
-        media.data = fileBuffer
-      }
-
-      let sendResult
-      try {
-        sendResult = await waClient.sendMessage(norm.waId, media, {
-          sendMediaAsDocument: true
-        })
-      } catch (err) {
-        if (err.message && (err.message.includes('addToast') || err.message.includes('memoize') || err.message.includes('id property'))) {
-          console.warn('⚠️ Intercepted addToast error in sendDocument fallback:', err.message)
-          sendResult = { id: { _serialized: 'doc_' + Date.now() } }
-        } else {
-          throw err
-        }
-      }
-
+      const media = MessageMedia.fromFilePath(filePath)
+      const sendResult = await waClient.sendMessage(norm.waId, media, {
+        caption: caption || undefined,
+        sendMediaAsDocument: true
+      })
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
@@ -615,45 +464,10 @@ export async function sendImage(phone, filePath, caption = '', clientId = null) 
 
   return whatsappQueue.enqueue(async () => {
     try {
-      await ensurePagePatched(waClient)
-
-      // Read file as buffer and create MessageMedia properly
-      const fileBuffer = fs.readFileSync(filePath)
-      const fileName = path.basename(filePath)
-      const media = new MessageMedia(
-        path.extname(filePath).replace('.', ''),
-        fileBuffer,
-        fileName,
-        caption || undefined
-      )
-
-      // Set id to prevent memoization errors
-      if (!media.id) {
-        media.id = `img_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`
-      }
-
-      // Ensure media object has all required properties
-      if (!media.mimetype) {
-        media.mimetype = 'image/jpeg'
-      }
-      if (!media.data) {
-        media.data = fileBuffer
-      }
-
-      let sendResult
-      try {
-        sendResult = await waClient.sendMessage(norm.waId, media, {
-          caption: caption || undefined
-        })
-      } catch (err) {
-        if (err.message && (err.message.includes('addToast') || err.message.includes('memoize') || err.message.includes('id property'))) {
-          console.warn('⚠️ Intercepted addToast error in sendImage fallback:', err.message)
-          sendResult = { id: { _serialized: 'img_' + Date.now() } }
-        } else {
-          throw err
-        }
-      }
-
+      const media = MessageMedia.fromFilePath(filePath)
+      const sendResult = await waClient.sendMessage(norm.waId, media, {
+        caption: caption || undefined
+      })
       await logMessageHistory({
         clientId,
         phone: norm.formatted,

@@ -16,7 +16,27 @@ import {
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
+// Vercel sets VERCEL=1 and VERCEL_ENV automatically in serverless functions
+const isVercel = !!(process.env.VERCEL || process.env.VERCEL_ENV)
+
+/**
+ * Guard: WhatsApp requires Puppeteer (headless Chrome) which cannot run
+ * on Vercel serverless. Returns true if blocked (caller should return).
+ */
+function blockOnVercel(res) {
+  if (isVercel) {
+    res.status(503).json({
+      success: false,
+      status: 'UNAVAILABLE',
+      error: 'WhatsApp is not available on cloud deployment. It requires the local Electron_Backend running on your PC (localhost:8001).'
+    })
+    return true
+  }
+  return false
+}
+
 export async function handleInitialize(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const result = await initializeWhatsApp()
     res.json(result)
@@ -26,6 +46,7 @@ export async function handleInitialize(req, res) {
 }
 
 export function handleGetStatus(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const status = getWhatsAppStatus()
     res.json(status)
@@ -35,6 +56,7 @@ export function handleGetStatus(req, res) {
 }
 
 export async function handleSendMessage(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const { phone, message, clientId } = req.body
     const result = await sendMessage(phone, message, clientId)
@@ -45,6 +67,7 @@ export async function handleSendMessage(req, res) {
 }
 
 export async function handleSendDocument(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const { phone, filePath, caption, clientId } = req.body
     const result = await sendDocument(phone, filePath, caption, clientId)
@@ -55,6 +78,7 @@ export async function handleSendDocument(req, res) {
 }
 
 export async function handleSendImage(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const { phone, filePath, caption, clientId } = req.body
     const result = await sendImage(phone, filePath, caption, clientId)
@@ -65,6 +89,7 @@ export async function handleSendImage(req, res) {
 }
 
 export async function handleCheckNumber(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const { phone } = req.body
     const result = await checkNumber(phone)
@@ -75,6 +100,7 @@ export async function handleCheckNumber(req, res) {
 }
 
 export async function handleLogout(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const result = await logoutWhatsApp()
     res.json(result)
@@ -84,6 +110,7 @@ export async function handleLogout(req, res) {
 }
 
 export async function handleRestart(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const result = await restartWhatsApp()
     res.json(result)
@@ -103,6 +130,7 @@ export async function handleGetHistory(req, res) {
 }
 
 export async function handleSaveTempPdfBuffer(req, res) {
+  if (blockOnVercel(res)) return
   try {
     const { buffer, fileName, base64 } = req.body
     const tempDir = path.join(__dirname, '../../uploads/temp_pdfs')
