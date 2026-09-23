@@ -69,8 +69,13 @@ export async function handleSendMessage(req, res) {
 export async function handleSendDocument(req, res) {
   if (blockOnVercel(res)) return
   try {
-    const { phone, filePath, caption, clientId } = req.body
-    const result = await sendDocument(phone, filePath, caption, clientId)
+    const { phone, filePath, caption, clientId, base64, filename, mimetype } = req.body
+    const result = await sendDocument(
+      phone,
+      base64 ? { base64, filename, mimetype, filePath } : filePath,
+      caption,
+      clientId
+    )
     res.json(result)
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })
@@ -80,8 +85,13 @@ export async function handleSendDocument(req, res) {
 export async function handleSendImage(req, res) {
   if (blockOnVercel(res)) return
   try {
-    const { phone, filePath, caption, clientId } = req.body
-    const result = await sendImage(phone, filePath, caption, clientId)
+    const { phone, filePath, caption, clientId, base64, filename, mimetype } = req.body
+    const result = await sendImage(
+      phone,
+      base64 ? { base64, filename, mimetype, filePath } : filePath,
+      caption,
+      clientId
+    )
     res.json(result)
   } catch (err) {
     res.status(500).json({ success: false, error: err.message })

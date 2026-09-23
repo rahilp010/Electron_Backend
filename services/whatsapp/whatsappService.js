@@ -369,29 +369,43 @@ export async function sendMessage(phone, message, clientId = null) {
   })
 }
 
-export async function sendDocument(phone, filePath, caption = '', clientId = null) {
+export async function sendDocument(phone, fileInput, caption = '', clientId = null) {
   const norm = normalizeWhatsAppNumber(phone)
+  const displayPath = typeof fileInput === 'string' ? fileInput : fileInput?.filename || fileInput?.filePath || 'document.pdf'
+
   if (!norm.isValid) {
     await logMessageHistory({
       clientId,
       phone,
       message: caption,
       messageType: 'document',
-      filePath,
+      filePath: displayPath,
       status: 'FAILED',
       error: norm.error
     })
     return { success: false, phone, error: norm.error }
   }
 
-  if (!fs.existsSync(filePath)) {
-    const err = `File not found at path: ${filePath}`
+  // Determine media source
+  let media = null
+  if (typeof fileInput === 'object' && fileInput.base64) {
+    media = new MessageMedia(
+      fileInput.mimetype || 'application/pdf',
+      fileInput.base64,
+      fileInput.filename || 'document.pdf'
+    )
+  } else if (typeof fileInput === 'string' && fs.existsSync(fileInput)) {
+    media = MessageMedia.fromFilePath(fileInput)
+  } else if (typeof fileInput === 'object' && fileInput.filePath && fs.existsSync(fileInput.filePath)) {
+    media = MessageMedia.fromFilePath(fileInput.filePath)
+  } else {
+    const err = `File not found at path: ${displayPath}`
     await logMessageHistory({
       clientId,
       phone: norm.formatted,
       message: caption,
       messageType: 'document',
-      filePath,
+      filePath: displayPath,
       status: 'FAILED',
       error: err
     })
@@ -405,7 +419,7 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
       phone: norm.formatted,
       message: caption,
       messageType: 'document',
-      filePath,
+      filePath: displayPath,
       status: 'FAILED',
       error: err
     })
@@ -414,7 +428,6 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
 
   return whatsappQueue.enqueue(async () => {
     try {
-      const media = MessageMedia.fromFilePath(filePath)
       const sendResult = await executeWithRetry(() =>
         waClient.sendMessage(norm.waId, media, {
           caption: caption || undefined,
@@ -426,7 +439,7 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
         phone: norm.formatted,
         message: caption,
         messageType: 'document',
-        filePath,
+        filePath: displayPath,
         status: 'SENT',
         error: null
       })
@@ -443,7 +456,7 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
         phone: norm.formatted,
         message: caption,
         messageType: 'document',
-        filePath,
+        filePath: displayPath,
         status: 'FAILED',
         error: err.message
       })
@@ -452,29 +465,43 @@ export async function sendDocument(phone, filePath, caption = '', clientId = nul
   })
 }
 
-export async function sendImage(phone, filePath, caption = '', clientId = null) {
+export async function sendImage(phone, fileInput, caption = '', clientId = null) {
   const norm = normalizeWhatsAppNumber(phone)
+  const displayPath = typeof fileInput === 'string' ? fileInput : fileInput?.filename || fileInput?.filePath || 'image.jpg'
+
   if (!norm.isValid) {
     await logMessageHistory({
       clientId,
       phone,
       message: caption,
       messageType: 'image',
-      filePath,
+      filePath: displayPath,
       status: 'FAILED',
       error: norm.error
     })
     return { success: false, phone, error: norm.error }
   }
 
-  if (!fs.existsSync(filePath)) {
-    const err = `Image file not found at path: ${filePath}`
+  // Determine media source
+  let media = null
+  if (typeof fileInput === 'object' && fileInput.base64) {
+    media = new MessageMedia(
+      fileInput.mimetype || 'image/jpeg',
+      fileInput.base64,
+      fileInput.filename || 'image.jpg'
+    )
+  } else if (typeof fileInput === 'string' && fs.existsSync(fileInput)) {
+    media = MessageMedia.fromFilePath(fileInput)
+  } else if (typeof fileInput === 'object' && fileInput.filePath && fs.existsSync(fileInput.filePath)) {
+    media = MessageMedia.fromFilePath(fileInput.filePath)
+  } else {
+    const err = `Image file not found at path: ${displayPath}`
     await logMessageHistory({
       clientId,
       phone: norm.formatted,
       message: caption,
       messageType: 'image',
-      filePath,
+      filePath: displayPath,
       status: 'FAILED',
       error: err
     })
@@ -488,7 +515,7 @@ export async function sendImage(phone, filePath, caption = '', clientId = null) 
       phone: norm.formatted,
       message: caption,
       messageType: 'image',
-      filePath,
+      filePath: displayPath,
       status: 'FAILED',
       error: err
     })
@@ -497,7 +524,6 @@ export async function sendImage(phone, filePath, caption = '', clientId = null) 
 
   return whatsappQueue.enqueue(async () => {
     try {
-      const media = MessageMedia.fromFilePath(filePath)
       const sendResult = await executeWithRetry(() =>
         waClient.sendMessage(norm.waId, media, {
           caption: caption || undefined
@@ -508,7 +534,7 @@ export async function sendImage(phone, filePath, caption = '', clientId = null) 
         phone: norm.formatted,
         message: caption,
         messageType: 'image',
-        filePath,
+        filePath: displayPath,
         status: 'SENT',
         error: null
       })
@@ -525,7 +551,7 @@ export async function sendImage(phone, filePath, caption = '', clientId = null) 
         phone: norm.formatted,
         message: caption,
         messageType: 'image',
-        filePath,
+        filePath: displayPath,
         status: 'FAILED',
         error: err.message
       })
