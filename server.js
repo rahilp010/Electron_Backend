@@ -195,6 +195,6 @@ const app = express();
     // Keep the process alive with a setInterval
     setInterval(() => {}, 1000);
 })().catch(err => {
-    console.error('Server startup error:', err);
+    console.error('❗Server startup error:', err);
     process.exit(1);
 });
