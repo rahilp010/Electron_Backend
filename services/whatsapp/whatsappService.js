@@ -92,13 +92,72 @@ async function logMessageHistory({ clientId, phone, message, messageType, filePa
   }
 }
 
-export async function initializeWhatsApp() {
+function removeStaleLockFiles(sessionDir, clientId = 'ENVY_BACKEND_SESSION') {
+  try {
+    const clientSessionPath = path.join(sessionDir, `session-${clientId}`)
+    if (!fs.existsSync(clientSessionPath)) return
+
+    const lockFileNames = [
+      'SingletonLock',
+      'SingletonCookie',
+      'SingletonSocket',
+      'DevToolsActivePort',
+      'lockfile'
+    ]
+
+    function recursiveDeleteLocks(dir) {
+      if (!fs.existsSync(dir)) return
+      const entries = fs.readdirSync(dir, { withFileTypes: true })
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          recursiveDeleteLocks(fullPath)
+        } else if (lockFileNames.includes(entry.name) || entry.name.endsWith('.lock')) {
+          try {
+            fs.unlinkSync(fullPath)
+            console.log('🧹 Cleaned up stale browser lock file:', fullPath)
+          } catch (e) {
+            // Ignore files currently locked by OS
+          }
+        }
+      }
+    }
+
+    recursiveDeleteLocks(clientSessionPath)
+  } catch (err) {
+    console.warn('⚠️ Warning cleaning lock files:', err.message)
+  }
+}
+
+async function safelyDestroyClient() {
+  if (!waClient) return
+  try {
+    if (waClient.pupBrowser) {
+      try {
+        const proc = waClient.pupBrowser.process()
+        await waClient.pupBrowser.close().catch(() => {})
+        if (proc && typeof proc.kill === 'function' && !proc.killed) {
+          proc.kill('SIGKILL')
+        }
+      } catch (e) {
+        // Ignore browser process kill errors
+      }
+    }
+    await waClient.destroy().catch(() => {})
+  } catch (err) {
+    console.warn('⚠️ Warning during waClient cleanup:', err.message)
+  } finally {
+    waClient = null
+  }
+}
+
+export async function initializeWhatsApp(retryCount = 0) {
   if (waClient && currentStatus === 'CONNECTED') {
     return { success: true, status: currentStatus, phone: connectedPhone }
   }
 
-  // Prevent re-initialization if already in progress
-  if (currentStatus === 'INITIALIZING') {
+  // Prevent concurrent initializations unless retrying
+  if (currentStatus === 'INITIALIZING' && retryCount === 0) {
     return { success: false, status: 'INITIALIZING', error: 'Initialization already in progress.' }
   }
 
@@ -106,8 +165,13 @@ export async function initializeWhatsApp() {
   lastError = null
 
   try {
+    if (waClient) {
+      await safelyDestroyClient()
+    }
+
     const sessionDir = getSessionDirectory()
     cleanupLegacySessions(sessionDir)
+    removeStaleLockFiles(sessionDir, 'ENVY_BACKEND_SESSION')
 
     const browserPath = getBrowserExecutablePath()
 
@@ -182,7 +246,7 @@ export async function initializeWhatsApp() {
 
     // ── Event: Disconnected ──
     waClient.on('disconnected', (reason) => {
-      console.log('📵 WhatsApp Backend disconnected:', reason)
+      console.log('`📵 WhatsApp Backend disconnected:', reason)
       currentStatus = 'DISCONNECTED'
       connectedPhone = null
       waClient = null
@@ -201,18 +265,25 @@ export async function initializeWhatsApp() {
     return { success: true, status: currentStatus, phone: connectedPhone }
   } catch (err) {
     console.error('❌ Failed to initialize WhatsApp client on backend:', err.message)
+
+    await safelyDestroyClient()
+
+    const isLockError =
+      err.message?.includes('already running') ||
+      err.message?.includes('userDataDir') ||
+      err.message?.includes('SingletonLock')
+
+    if (retryCount < 2 && isLockError) {
+      console.warn(`⚠️ Detected locked session dir on attempt ${retryCount + 1}. Cleaning lock files and retrying in 1.5s...`)
+      const sessionDir = getSessionDirectory()
+      removeStaleLockFiles(sessionDir, 'ENVY_BACKEND_SESSION')
+      currentStatus = 'DISCONNECTED'
+      await new Promise((res) => setTimeout(res, 1500))
+      return await initializeWhatsApp(retryCount + 1)
+    }
+
     lastError = err.message
     currentStatus = 'ERROR'
-
-    // Clean up the client reference if initialization failed
-    if (waClient) {
-      try {
-        await waClient.destroy()
-      } catch (e) {
-        // Ignore destroy errors during cleanup
-      }
-      waClient = null
-    }
 
     return { success: false, status: 'ERROR', error: err.message }
   }
@@ -230,18 +301,11 @@ export function getWhatsAppStatus() {
 
 export async function logoutWhatsApp() {
   try {
-    if (waClient) {
-      try {
-        await waClient.logout()
-        await waClient.destroy()
-      } catch (e) {
-        console.warn('Logout/destroy warning:', e.message)
-      }
-      waClient = null
-    }
+    await safelyDestroyClient()
     connectedPhone = null
     currentQRCode = null
     currentStatus = 'LOGGED_OUT'
+    lastError = null
     return { success: true }
   } catch (err) {
     console.error('Error during WhatsApp backend logout:', err)
@@ -251,20 +315,23 @@ export async function logoutWhatsApp() {
 
 export async function restartWhatsApp() {
   try {
-    if (waClient) {
-      try {
-        await waClient.destroy()
-      } catch (e) {
-        console.warn('Destroy waClient warning:', e.message)
-      }
-      waClient = null
-    }
+    await safelyDestroyClient()
+    const sessionDir = getSessionDirectory()
+    removeStaleLockFiles(sessionDir, 'ENVY_BACKEND_SESSION')
+
     currentStatus = 'DISCONNECTED'
     currentQRCode = null
     connectedPhone = null
+    lastError = null
+
+    // Give OS time to release file handles
+    await new Promise((res) => setTimeout(res, 1000))
+
     return await initializeWhatsApp()
   } catch (err) {
     console.error('Error during WhatsApp backend restart:', err)
+    lastError = err.message
+    currentStatus = 'ERROR'
     return { success: false, error: err.message }
   }
 }
