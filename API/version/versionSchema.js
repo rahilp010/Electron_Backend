@@ -39,6 +39,13 @@ const versionSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    platform: {
+      type: String,
+      enum: ['all', 'android', 'windows', 'darwin', 'linux'],
+      default: 'all',
+      trim: true,
+      lowercase: true,
+    },
   },
   {
     timestamps: true,

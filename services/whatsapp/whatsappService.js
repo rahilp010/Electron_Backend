@@ -16,11 +16,19 @@ let currentStatus = 'DISCONNECTED' // INITIALIZING, QR_REQUIRED, CONNECTING, CON
 let currentQRCode = null
 let connectedPhone = null
 let lastError = null
+let initializationPromise = null
+let readyTimeoutHandle = null
+
+// How long we'll wait after a QR scan / authenticated event before giving up
+// and surfacing an ERROR instead of hanging silently forever.
+const READY_TIMEOUT_MS = 90000
 
 const inMemoryLogs = []
 
 function getSessionDirectory() {
-  const sessionDir = path.join(__dirname, '../../whatsapp-sessions')
+  // Prefer the env var set by Electron's localServerManager (writable user directory outside project root)
+  const defaultUserDir = path.join(process.env.APPDATA || process.env.USERPROFILE || 'C:\\ProgramData', 'ENVY_ERP', 'whatsapp-sessions')
+  const sessionDir = process.env.WHATSAPP_SESSION_PATH || defaultUserDir
   if (!fs.existsSync(sessionDir)) {
     fs.mkdirSync(sessionDir, { recursive: true })
   }
@@ -44,14 +52,33 @@ function cleanupLegacySessions(sessionDir) {
   }
 }
 
-function getBrowserExecutablePath() {
-  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
-    return process.env.PUPPETEER_EXECUTABLE_PATH
+function removeStaleLockFiles(sessionDir, sessionName) {
+  const lockFileNames = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'DevToolsActivePort']
+  const sessionFolder = path.join(sessionDir, `session-${sessionName}`)
+  try {
+    if (!fs.existsSync(sessionFolder)) return
+    for (const lockFile of lockFileNames) {
+      const lockPath = path.join(sessionFolder, lockFile)
+      if (fs.existsSync(lockPath)) {
+        fs.unlinkSync(lockPath)
+        console.log(`🧹 Cleaned up stale browser lock file: ${lockPath}`)
+      }
+    }
+  } catch (err) {
+    console.warn('Lock file cleanup warning:', err.message)
   }
+}
+
+function getBrowserExecutablePath() {
+  // Set WHATSAPP_USE_BUNDLED_CHROMIUM=true to skip system browser detection
+  // entirely and let Puppeteer use its own bundled Chromium. Useful if a
+  // system Chrome/Edge update ever gets ahead of what this whatsapp-web.js
+  // / puppeteer-core version was tested against.
+  if (process.env.WHATSAPP_USE_BUNDLED_CHROMIUM === 'true') {
+    return null
+  }
+
   const possiblePaths = [
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     `${process.env.LOCALAPPDATA || ''}\\Google\\Chrome\\Application\\chrome.exe`,
@@ -62,6 +89,38 @@ function getBrowserExecutablePath() {
     if (p && fs.existsSync(p)) return p
   }
   return null
+}
+
+function clearReadyTimeout() {
+  if (readyTimeoutHandle) {
+    clearTimeout(readyTimeoutHandle)
+    readyTimeoutHandle = null
+  }
+}
+
+function armReadyTimeout(stageLabel) {
+  clearReadyTimeout()
+  readyTimeoutHandle = setTimeout(() => {
+    if (currentStatus !== 'CONNECTED') {
+      console.error(`⏱️ WhatsApp Backend timed out waiting for 'ready' after ${stageLabel} (${READY_TIMEOUT_MS / 1000}s).`)
+      currentStatus = 'ERROR'
+      lastError = `Timed out waiting for WhatsApp to finish connecting after ${stageLabel}. This usually means the cached WhatsApp Web version or local browser is out of sync — try restarting, or set WHATSAPP_USE_BUNDLED_CHROMIUM=true.`
+    }
+  }, READY_TIMEOUT_MS)
+}
+
+async function safelyDestroyClient() {
+  clearReadyTimeout()
+  try {
+    if (waClient) {
+      await waClient.destroy()
+    }
+  } catch (err) {
+    console.warn('safelyDestroyClient warning:', err.message)
+  } finally {
+    waClient = null
+    currentStatus = 'DISCONNECTED'
+  }
 }
 
 async function logMessageHistory({ clientId, phone, message, messageType, filePath, status, error }) {
@@ -92,73 +151,9 @@ async function logMessageHistory({ clientId, phone, message, messageType, filePa
   }
 }
 
-function removeStaleLockFiles(sessionDir, clientId = 'ENVY_BACKEND_SESSION') {
-  try {
-    const clientSessionPath = path.join(sessionDir, `session-${clientId}`)
-    if (!fs.existsSync(clientSessionPath)) return
-
-    const lockFileNames = [
-      'SingletonLock',
-      'SingletonCookie',
-      'SingletonSocket',
-      'DevToolsActivePort',
-      'lockfile'
-    ]
-
-    function recursiveDeleteLocks(dir) {
-      if (!fs.existsSync(dir)) return
-      const entries = fs.readdirSync(dir, { withFileTypes: true })
-      for (const entry of entries) {
-        const fullPath = path.join(dir, entry.name)
-        if (entry.isDirectory()) {
-          recursiveDeleteLocks(fullPath)
-        } else if (lockFileNames.includes(entry.name) || entry.name.endsWith('.lock')) {
-          try {
-            fs.unlinkSync(fullPath)
-            console.log('🧹 Cleaned up stale browser lock file:', fullPath)
-          } catch (e) {
-            // Ignore files currently locked by OS
-          }
-        }
-      }
-    }
-
-    recursiveDeleteLocks(clientSessionPath)
-  } catch (err) {
-    console.warn('⚠️ Warning cleaning lock files:', err.message)
-  }
-}
-
-async function safelyDestroyClient() {
-  if (!waClient) return
-  try {
-    if (waClient.pupBrowser) {
-      try {
-        const proc = waClient.pupBrowser.process()
-        await waClient.pupBrowser.close().catch(() => {})
-        if (proc && typeof proc.kill === 'function' && !proc.killed) {
-          proc.kill('SIGKILL')
-        }
-      } catch (e) {
-        // Ignore browser process kill errors
-      }
-    }
-    await waClient.destroy().catch(() => {})
-  } catch (err) {
-    console.warn('⚠️ Warning during waClient cleanup:', err.message)
-  } finally {
-    waClient = null
-  }
-}
-
-export async function initializeWhatsApp(retryCount = 0) {
+async function initializeWhatsAppInternal(retryCount = 0) {
   if (waClient && currentStatus === 'CONNECTED') {
     return { success: true, status: currentStatus, phone: connectedPhone }
-  }
-
-  // Prevent concurrent initializations unless retrying
-  if (currentStatus === 'INITIALIZING' && retryCount === 0) {
-    return { success: false, status: 'INITIALIZING', error: 'Initialization already in progress.' }
   }
 
   currentStatus = 'INITIALIZING'
@@ -180,19 +175,30 @@ export async function initializeWhatsApp(retryCount = 0) {
         clientId: 'ENVY_BACKEND_SESSION',
         dataPath: sessionDir
       }),
+      // IMPORTANT: don't pin this to a fixed commit/version file. A frozen
+      // WhatsApp Web build can drift out of sync with what WhatsApp's
+      // servers currently expect, which lets auth succeed (device links
+      // fine) but silently stalls the page before 'ready' ever fires, with
+      // no thrown error. Using {version} lets the library resolve and cache
+      // whatever the current live version actually is.
       webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html'
       },
+      // Disables whatsapp-web.js's internal auth timeout so a slow WA Web
+      // load doesn't get killed mid-way — our own armReadyTimeout() below
+      // is what now decides when to give up.
+      authTimeoutMs: 0,
       puppeteer: {
-        headless: true,
+        // 'new' is the modern, more stable Chrome headless mode. The old
+        // `headless: true` mode is known to have rendering/detection
+        // issues with heavier single-page apps like WhatsApp Web on
+        // current Chrome releases.
+        headless: 'new',
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
           '--disable-gpu'
         ],
         ...(browserPath ? { executablePath: browserPath } : {})
@@ -205,28 +211,45 @@ export async function initializeWhatsApp(retryCount = 0) {
     waClient.on('qr', async (qr) => {
       console.log('⚡ WhatsApp Backend QR Code generated')
       try {
-        // Generate a data URI so the frontend can display it directly
         currentQRCode = await QRCode.toDataURL(qr)
       } catch (e) {
-        // Fallback to raw QR string if data URI generation fails
         currentQRCode = qr
       }
       currentStatus = 'QR_REQUIRED'
+      armReadyTimeout('QR generation')
     })
 
-    // ── Event: Authenticated (session restored or QR scanned) ──
+    // ── Event: Loading screen (diagnostic — shows real page-load progress) ──
+    waClient.on('loading_screen', (percent, message) => {
+      console.log(`⏳ WhatsApp Backend loading: ${percent}% - ${message}`)
+    })
+
+    // ── Event: Authenticated ──
     waClient.on('authenticated', () => {
       console.log('🔐 WhatsApp Backend session authenticated')
       currentStatus = 'CONNECTING'
       currentQRCode = null
+      armReadyTimeout('authentication')
+
+      setTimeout(() => {
+        try {
+          if (waClient && waClient.info && waClient.info.wid) {
+            console.log('✅ Connected phone detected on authenticated event:', waClient.info.wid.user)
+            currentStatus = 'CONNECTED'
+            connectedPhone = `+${waClient.info.wid.user}`
+            clearReadyTimeout()
+          }
+        } catch (e) {}
+      }, 2000)
     })
 
-    // ── Event: Ready (fully connected) ──
+    // ── Event: Ready ──
     waClient.on('ready', () => {
       console.log('✅ WhatsApp Backend client is ready')
       currentStatus = 'CONNECTED'
       currentQRCode = null
       lastError = null
+      clearReadyTimeout()
 
       try {
         if (waClient.info && waClient.info.wid) {
@@ -237,19 +260,21 @@ export async function initializeWhatsApp(retryCount = 0) {
       }
     })
 
-    // ── Event: Authentication failure ──
+    // ── Event: Auth failure ──
     waClient.on('auth_failure', (msg) => {
       console.error('🔴 WhatsApp Backend auth failure:', msg)
       currentStatus = 'ERROR'
       lastError = `Authentication failed: ${msg}`
+      clearReadyTimeout()
     })
 
     // ── Event: Disconnected ──
     waClient.on('disconnected', (reason) => {
-      console.log('`📵 WhatsApp Backend disconnected:', reason)
+      console.log('📵 WhatsApp Backend disconnected:', reason)
       currentStatus = 'DISCONNECTED'
       connectedPhone = null
       waClient = null
+      clearReadyTimeout()
     })
 
     // ── Event: State change ──
@@ -257,11 +282,9 @@ export async function initializeWhatsApp(retryCount = 0) {
       console.log('📶 WhatsApp Backend state changed:', state)
     })
 
-    // Start the client (non-blocking — events handle the rest)
+    // Start client
     await waClient.initialize()
 
-    // If we reached here without error, the client initialized successfully.
-    // The 'ready' event may or may not have fired yet (depends on session state).
     return { success: true, status: currentStatus, phone: connectedPhone }
   } catch (err) {
     console.error('❌ Failed to initialize WhatsApp client on backend:', err.message)
@@ -279,7 +302,7 @@ export async function initializeWhatsApp(retryCount = 0) {
       removeStaleLockFiles(sessionDir, 'ENVY_BACKEND_SESSION')
       currentStatus = 'DISCONNECTED'
       await new Promise((res) => setTimeout(res, 1500))
-      return await initializeWhatsApp(retryCount + 1)
+      return await initializeWhatsAppInternal(retryCount + 1)
     }
 
     lastError = err.message
@@ -289,7 +312,35 @@ export async function initializeWhatsApp(retryCount = 0) {
   }
 }
 
+export async function initializeWhatsApp() {
+  if (waClient && currentStatus === 'CONNECTED') {
+    return { success: true, status: currentStatus, phone: connectedPhone }
+  }
+
+  if (initializationPromise) {
+    return initializationPromise
+  }
+
+  initializationPromise = initializeWhatsAppInternal().finally(() => {
+    initializationPromise = null
+  })
+
+  return initializationPromise
+}
+
 export function getWhatsAppStatus() {
+  if (waClient && (currentStatus === 'CONNECTING' || currentStatus === 'INITIALIZING' || currentStatus === 'QR_REQUIRED')) {
+    try {
+      if (waClient.info && waClient.info.wid) {
+        currentStatus = 'CONNECTED'
+        connectedPhone = `+${waClient.info.wid.user}`
+        currentQRCode = null
+        lastError = null
+        clearReadyTimeout()
+      }
+    } catch (e) {}
+  }
+
   return {
     status: currentStatus,
     phone: connectedPhone,
@@ -301,11 +352,19 @@ export function getWhatsAppStatus() {
 
 export async function logoutWhatsApp() {
   try {
-    await safelyDestroyClient()
+    if (waClient) {
+      try {
+        await waClient.logout()
+        await waClient.destroy()
+      } catch (e) {
+        console.warn('Logout/destroy warning:', e.message)
+      }
+      waClient = null
+    }
     connectedPhone = null
     currentQRCode = null
     currentStatus = 'LOGGED_OUT'
-    lastError = null
+    clearReadyTimeout()
     return { success: true }
   } catch (err) {
     console.error('Error during WhatsApp backend logout:', err)
@@ -315,23 +374,21 @@ export async function logoutWhatsApp() {
 
 export async function restartWhatsApp() {
   try {
-    await safelyDestroyClient()
-    const sessionDir = getSessionDirectory()
-    removeStaleLockFiles(sessionDir, 'ENVY_BACKEND_SESSION')
-
+    if (waClient) {
+      try {
+        await waClient.destroy()
+      } catch (e) {
+        console.warn('Destroy waClient warning:', e.message)
+      }
+      waClient = null
+    }
     currentStatus = 'DISCONNECTED'
     currentQRCode = null
     connectedPhone = null
-    lastError = null
-
-    // Give OS time to release file handles
-    await new Promise((res) => setTimeout(res, 1000))
-
+    clearReadyTimeout()
     return await initializeWhatsApp()
   } catch (err) {
     console.error('Error during WhatsApp backend restart:', err)
-    lastError = err.message
-    currentStatus = 'ERROR'
     return { success: false, error: err.message }
   }
 }
@@ -356,24 +413,6 @@ export async function checkNumber(phone) {
   } catch (err) {
     console.error('checkNumber error:', err)
     return { success: false, registered: false, error: err.message }
-  }
-}
-
-async function executeWithRetry(actionFn, retries = 1, delayMs = 1500) {
-  try {
-    return await actionFn()
-  } catch (err) {
-    const isContextError =
-      err.message?.includes('Execution context was destroyed') ||
-      err.message?.includes('ProtocolError') ||
-      err.message?.includes('Target closed')
-
-    if (isContextError && retries > 0) {
-      console.warn(`⚠️ Execution context reset detected. Retrying in ${delayMs}ms... (${err.message})`)
-      await new Promise((res) => setTimeout(res, delayMs))
-      return await executeWithRetry(actionFn, retries - 1, delayMs)
-    }
-    throw err
   }
 }
 
@@ -406,7 +445,7 @@ export async function sendMessage(phone, message, clientId = null) {
 
   return whatsappQueue.enqueue(async () => {
     try {
-      const sendResult = await executeWithRetry(() => waClient.sendMessage(norm.waId, message))
+      const sendResult = await waClient.sendMessage(norm.waId, message)
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
@@ -436,43 +475,29 @@ export async function sendMessage(phone, message, clientId = null) {
   })
 }
 
-export async function sendDocument(phone, fileInput, caption = '', clientId = null) {
+export async function sendDocument(phone, filePath, caption = '', clientId = null) {
   const norm = normalizeWhatsAppNumber(phone)
-  const displayPath = typeof fileInput === 'string' ? fileInput : fileInput?.filename || fileInput?.filePath || 'document.pdf'
-
   if (!norm.isValid) {
     await logMessageHistory({
       clientId,
       phone,
       message: caption,
       messageType: 'document',
-      filePath: displayPath,
+      filePath,
       status: 'FAILED',
       error: norm.error
     })
     return { success: false, phone, error: norm.error }
   }
 
-  // Determine media source
-  let media = null
-  if (typeof fileInput === 'object' && fileInput.base64) {
-    media = new MessageMedia(
-      fileInput.mimetype || 'application/pdf',
-      fileInput.base64,
-      fileInput.filename || 'document.pdf'
-    )
-  } else if (typeof fileInput === 'string' && fs.existsSync(fileInput)) {
-    media = MessageMedia.fromFilePath(fileInput)
-  } else if (typeof fileInput === 'object' && fileInput.filePath && fs.existsSync(fileInput.filePath)) {
-    media = MessageMedia.fromFilePath(fileInput.filePath)
-  } else {
-    const err = `File not found at path: ${displayPath}`
+  if (!fs.existsSync(filePath)) {
+    const err = `File not found at path: ${filePath}`
     await logMessageHistory({
       clientId,
       phone: norm.formatted,
       message: caption,
       messageType: 'document',
-      filePath: displayPath,
+      filePath,
       status: 'FAILED',
       error: err
     })
@@ -486,7 +511,7 @@ export async function sendDocument(phone, fileInput, caption = '', clientId = nu
       phone: norm.formatted,
       message: caption,
       messageType: 'document',
-      filePath: displayPath,
+      filePath,
       status: 'FAILED',
       error: err
     })
@@ -495,18 +520,17 @@ export async function sendDocument(phone, fileInput, caption = '', clientId = nu
 
   return whatsappQueue.enqueue(async () => {
     try {
-      const sendResult = await executeWithRetry(() =>
-        waClient.sendMessage(norm.waId, media, {
-          caption: caption || undefined,
-          sendMediaAsDocument: true
-        })
-      )
+      const media = MessageMedia.fromFilePath(filePath)
+      const sendResult = await waClient.sendMessage(norm.waId, media, {
+        caption: caption || undefined,
+        sendMediaAsDocument: true
+      })
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
         message: caption,
         messageType: 'document',
-        filePath: displayPath,
+        filePath,
         status: 'SENT',
         error: null
       })
@@ -523,7 +547,7 @@ export async function sendDocument(phone, fileInput, caption = '', clientId = nu
         phone: norm.formatted,
         message: caption,
         messageType: 'document',
-        filePath: displayPath,
+        filePath,
         status: 'FAILED',
         error: err.message
       })
@@ -532,43 +556,29 @@ export async function sendDocument(phone, fileInput, caption = '', clientId = nu
   })
 }
 
-export async function sendImage(phone, fileInput, caption = '', clientId = null) {
+export async function sendImage(phone, filePath, caption = '', clientId = null) {
   const norm = normalizeWhatsAppNumber(phone)
-  const displayPath = typeof fileInput === 'string' ? fileInput : fileInput?.filename || fileInput?.filePath || 'image.jpg'
-
   if (!norm.isValid) {
     await logMessageHistory({
       clientId,
       phone,
       message: caption,
       messageType: 'image',
-      filePath: displayPath,
+      filePath,
       status: 'FAILED',
       error: norm.error
     })
     return { success: false, phone, error: norm.error }
   }
 
-  // Determine media source
-  let media = null
-  if (typeof fileInput === 'object' && fileInput.base64) {
-    media = new MessageMedia(
-      fileInput.mimetype || 'image/jpeg',
-      fileInput.base64,
-      fileInput.filename || 'image.jpg'
-    )
-  } else if (typeof fileInput === 'string' && fs.existsSync(fileInput)) {
-    media = MessageMedia.fromFilePath(fileInput)
-  } else if (typeof fileInput === 'object' && fileInput.filePath && fs.existsSync(fileInput.filePath)) {
-    media = MessageMedia.fromFilePath(fileInput.filePath)
-  } else {
-    const err = `Image file not found at path: ${displayPath}`
+  if (!fs.existsSync(filePath)) {
+    const err = `Image file not found at path: ${filePath}`
     await logMessageHistory({
       clientId,
       phone: norm.formatted,
       message: caption,
       messageType: 'image',
-      filePath: displayPath,
+      filePath,
       status: 'FAILED',
       error: err
     })
@@ -582,7 +592,7 @@ export async function sendImage(phone, fileInput, caption = '', clientId = null)
       phone: norm.formatted,
       message: caption,
       messageType: 'image',
-      filePath: displayPath,
+      filePath,
       status: 'FAILED',
       error: err
     })
@@ -591,17 +601,16 @@ export async function sendImage(phone, fileInput, caption = '', clientId = null)
 
   return whatsappQueue.enqueue(async () => {
     try {
-      const sendResult = await executeWithRetry(() =>
-        waClient.sendMessage(norm.waId, media, {
-          caption: caption || undefined
-        })
-      )
+      const media = MessageMedia.fromFilePath(filePath)
+      const sendResult = await waClient.sendMessage(norm.waId, media, {
+        caption: caption || undefined
+      })
       await logMessageHistory({
         clientId,
         phone: norm.formatted,
         message: caption,
         messageType: 'image',
-        filePath: displayPath,
+        filePath,
         status: 'SENT',
         error: null
       })
@@ -618,7 +627,7 @@ export async function sendImage(phone, fileInput, caption = '', clientId = null)
         phone: norm.formatted,
         message: caption,
         messageType: 'image',
-        filePath: displayPath,
+        filePath,
         status: 'FAILED',
         error: err.message
       })
@@ -637,4 +646,9 @@ export async function getWhatsAppMessages(clientId = null) {
     const filtered = clientId ? inMemoryLogs.filter((l) => l.clientId === clientId) : inMemoryLogs
     return { success: true, data: filtered }
   }
+}
+
+export function destroyWhatsAppService() {
+  clearReadyTimeout()
+  console.log('🧹 WhatsApp service cleaned up.')
 }

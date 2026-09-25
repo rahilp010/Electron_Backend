@@ -33,8 +33,12 @@ const getCookieOptions = () => ({
   path: '/',
 });
 
-const getVersionRecord = async (activationKey = null) => {
+const getVersionRecord = async (activationKey = null, clientPlatform = 'all') => {
+  const normPlatform = String(clientPlatform || 'all').toLowerCase().trim();
+  const platform = normPlatform === 'win32' ? 'windows' : normPlatform;
+
   try {
+    // 1. If key provided, check targeted key rule for requested platform or universal
     if (activationKey) {
       const rawKey = String(activationKey).trim().toUpperCase();
       const strippedKey = rawKey.replace(/[^A-Za-z0-9]/g, '');
@@ -42,6 +46,7 @@ const getVersionRecord = async (activationKey = null) => {
       const targetedRecord = await VersionConfig.findOne({
         targetKeys: { $in: [rawKey, strippedKey] },
         active: { $ne: false },
+        $or: [{ platform }, { platform: 'all' }, { platform: {$exists: false } }],
       })
         .sort({ updatedAt: -1 })
         .lean();
@@ -50,6 +55,7 @@ const getVersionRecord = async (activationKey = null) => {
         return {
           version: targetedRecord.version,
           url: targetedRecord.url,
+          platform: targetedRecord.platform || 'all',
           status: targetedRecord.status || 'success',
           changeLog: targetedRecord.changeLog,
           isTargeted: true,
@@ -57,6 +63,27 @@ const getVersionRecord = async (activationKey = null) => {
       }
     }
 
+    // 2. Check platform-specific release rule (e.g. platform: 'android' or 'windows')
+    if (platform !== 'all') {
+      const platformRecord = await VersionConfig.findOne({
+        $or: [{ platform }, { key: platform }],
+        active: { $ne: false },
+      })
+        .sort({ updatedAt: -1 })
+        .lean();
+
+      if (platformRecord) {
+        return {
+          version: platformRecord.version,
+          url: platformRecord.url,
+          platform: platformRecord.platform || platform,
+          status: platformRecord.status || 'success',
+          changeLog: platformRecord.changeLog,
+        };
+      }
+    }
+
+    // 3. Fallback to default release rule
     let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
 
     if (!versionRecord) {
@@ -67,6 +94,7 @@ const getVersionRecord = async (activationKey = null) => {
     return {
       version: versionRecord.version,
       url: versionRecord.url,
+      platform: versionRecord.platform || 'all',
       status: versionRecord.status || 'success',
       changeLog: versionRecord.changeLog,
     };
@@ -75,6 +103,7 @@ const getVersionRecord = async (activationKey = null) => {
     return {
       version: DEFAULT_VERSION_DATA.version,
       url: DEFAULT_VERSION_DATA.url,
+      platform: 'all',
       status: DEFAULT_VERSION_DATA.status || 'success',
       changeLog: DEFAULT_VERSION_DATA.changeLog,
     };
@@ -126,6 +155,14 @@ const isZipFile = (file) => {
   return lowerName.endsWith('.zip');
 };
 
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const isAdminAuthenticated = (req) => {
   try {
     const token = req.cookies?.[config.versionAdminCookieName];
@@ -147,709 +184,356 @@ const renderAdminPage = (currentData) => `
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Electron by Envy | Admin</title>
+  <title>Envy ERP | Version Control</title>
   <link rel="icon" type="image/png" href="/updates/services/Envy.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg-dark: #03060c;
-      --accent-blue: #7ba2db;
-      --accent-bg: rgba(18, 33, 56, 0.6);
-      --border-color: rgba(123, 162, 219, 0.25);
+      --accent-blue: #60a5fa;
+      --bg-dark: #16161b;
+      --bg-surface: #24242d;
+      --bg-input: #16161b;
+      --accent-primary: #daf4aa;
+      --accent-hover: #cbe699;
+      --border-color: rgba(255, 255, 255, 0.1);
+      --border-focus: rgba(218, 244, 170, 0.4);
       --text-main: #ffffff;
-      --text-dim: rgba(255, 255, 255, 0.6);
-      --error-red: #ff4d4d;
-      --success-green: #4ade80;
-      --modal-bg: rgba(5, 10, 20, 0.95);
+      --text-dim: #9ca3af;
+      --error-red: #f87171;
+      --success-green: #34d399;
+      --warning-amber: #fbbf24;
+      --modal-bg: #24242d;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html {
-      width: 100%;
-      min-height: 100%;
-    }
+    html { width: 100%; min-height: 100%; }
     body {
       background-color: var(--bg-dark);
-      background-image: radial-gradient(rgba(123, 162, 219, 0.15) 1px, transparent 1px);
-      background-size: 24px 24px;
-      background-position: center top;
       color: var(--text-main);
-      font-family: 'Inter', sans-serif;
+      font-family: 'Poppins', sans-serif;
       width: 100%;
       min-height: 100dvh;
       overflow-x: hidden;
-      overflow-y: auto;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       position: relative;
     }
-    .mountain-bg {
-      position: absolute;
-      bottom: -10%; left: -5%; width: 110%; height: 110%;
-      background: url('https://images.unsplash.com/photo-1542224566-6e85f2e6772f?q=80&w=2000&auto=format&fit=crop') no-repeat center bottom;
-      background-size: cover; opacity: 0.6; mix-blend-mode: screen;
-      filter: grayscale(100%) sepia(30%) hue-rotate(185deg) brightness(1.1) contrast(1.4);
-      z-index: 1; pointer-events: none;
+    
+    /* Background Orbs */
+    .bg-orb-1 {
+      position: absolute; top: -10%; left: -10%; width: 400px; height: 400px;
+      background: rgba(218, 244, 170, 0.05); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1;
     }
-    .ascii-overlay {
-      position: absolute; color: rgba(123, 162, 219, 0.3); font-family: 'JetBrains Mono', monospace;
-      font-size: 10px; line-height: 12px; white-space: pre; z-index: 2; pointer-events: none;
+    .bg-orb-2 {
+      position: absolute; bottom: -10%; right: -10%; width: 500px; height: 500px;
+      background: rgba(99, 102, 241, 0.05); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1;
     }
-    .ascii-overlay.left { bottom: 15%; left: 5%; }
-    .ascii-overlay.top-center { top: 5%; left: 45%; }
-    .tech-frame {
-      position: absolute;
-      top: clamp(12px, 3vw, 30px);
-      left: clamp(12px, 3vw, 30px);
-      right: clamp(12px, 3vw, 30px);
-      bottom: clamp(12px, 3vw, 30px);
-      border: 1px solid var(--border-color);
-      z-index: 10;
-      pointer-events: none;
-    }
-    .crosshair {
-      position: absolute; width: 20px; height: 20px; display: flex;
-      align-items: center; justify-content: center; color: var(--accent-blue);
-      font-family: 'JetBrains Mono', monospace; font-size: 18px;
-    }
-    .crosshair.tl { top: -10px; left: -10px; }
-    .crosshair.tr { top: -10px; right: -10px; }
-    .crosshair.bl { bottom: -10px; left: -10px; }
-    .crosshair.br { bottom: -10px; right: -10px; }
+
     .ui-tags {
-      position: absolute;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      z-index: 20;
-      max-width: calc(100vw - 32px);
+      position: absolute; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: calc(100vw - 32px);
     }
-    .ui-tags.tl { top: clamp(12px, 2.5vw, 24px); left: clamp(12px, 2.5vw, 24px); align-items: flex-start; }
-    .ui-tags.tr { top: clamp(12px, 2.5vw, 24px); right: clamp(12px, 2.5vw, 24px); align-items: flex-end; }
+    .ui-tags.tl { top: clamp(16px, 3vw, 32px); left: clamp(16px, 3vw, 32px); align-items: flex-start; }
+    .ui-tags.tr { top: clamp(16px, 3vw, 32px); right: clamp(16px, 3vw, 32px); align-items: flex-end; }
     .tag {
-      background-color: var(--accent-bg);
+      background-color: var(--bg-surface);
       border: 1px solid var(--border-color);
-      color: var(--accent-blue);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      padding: 4px 8px;
-      letter-spacing: 0.05em;
-      backdrop-filter: blur(4px);
-      max-width: 100%;
-      word-break: break-word;
+      color: var(--text-dim);
+      font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 6px 12px;
+      letter-spacing: 0.05em; border-radius: 8px; backdrop-filter: blur(10px);
     }
+    
     .hero-content {
-      position: relative;
-      z-index: 30;
-      text-align: center;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 0 16px;
-      width: 100%;
-      max-width: 100%;
+      position: relative; z-index: 30; text-align: center; display: flex; flex-direction: column; align-items: center; padding: 0 16px; width: 100%; max-width: 100%;
     }
     .hero-title {
-      font-size: clamp(56px, 15vw, 200px);
-      font-weight: 800;
-      letter-spacing: -0.04em;
-      color: var(--text-main);
-      line-height: 0.9;
-      margin-bottom: 20px;
-      text-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-      max-width: 100%;
-      overflow-wrap: break-word;
+      font-size: clamp(48px, 12vw, 150px); font-weight: 300; letter-spacing: -0.04em; color: var(--text-main); line-height: 0.9; margin-bottom: 24px;
     }
+    .hero-subtitle {
+      font-size: 16px; color: var(--text-dim); margin-bottom: 32px; font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+
     .update-btn {
-      background-color: var(--text-main);
-      color: #000;
-      border: none;
-      padding: 12px 32px;
-      font-size: 14px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      font-family: 'Inter', sans-serif;
-      margin-top: 20px;
-      max-width: calc(100vw - 32px);
-      width: auto;
-      min-height: 44px;
+      background-color: var(--accent-primary); color: #16161b; border: none; padding: 14px 40px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: all 0.3s ease; border-radius: 12px; font-family: 'Poppins', sans-serif; box-shadow: 0 4px 14px rgba(218, 244, 170, 0.15);
     }
     .update-btn:hover {
-      background-color: var(--accent-blue);
-      color: #fff;
-      transform: translateY(-2px);
-      box-shadow: 0 10px 20px rgba(123, 162, 219, 0.3);
+      background-color: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(218, 244, 170, 0.25);
     }
+
+    /* Modals */
     .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.8);
-      backdrop-filter: blur(8px);
-      z-index: 100;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      padding: 16px;
-      overflow-y: auto;
-      box-sizing: border-box;
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px); z-index: 100; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease; padding: 16px; overflow-y: auto; box-sizing: border-box;
     }
     .modal-overlay.active { display: flex; opacity: 1; }
+    
     .modal-content {
-      background: var(--modal-bg);
-      border: 1px solid var(--border-color);
-      width: min(650px, 100%);
-      padding: clamp(18px, 4vw, 30px);
-      position: relative;
-      transform: translateY(20px);
-      transition: transform 0.3s ease;
-      max-height: calc(100dvh - 32px);
-      overflow-y: auto;
-      overflow-x: hidden;
-      box-sizing: border-box;
+      background: var(--bg-surface); border: 1px solid var(--border-color); width: min(1200px, 95%); padding: clamp(24px, 4vw, 40px); border-radius: 24px; position: relative; transform: translateY(20px); transition: transform 0.3s ease; max-height: calc(100dvh - 32px); overflow-y: auto; overflow-x: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
     }
-    /* Hide scrollbar for Chrome, Safari and Opera */
-    .modal-content::-webkit-scrollbar { display: none; }
-    /* Hide scrollbar for IE, Edge and Firefox */
-    .modal-content { -ms-overflow-style: none; scrollbar-width: none; }
-    
+    .modal-content.small-modal { width: min(450px, 95%); }
     .modal-overlay.active .modal-content { transform: translateY(0); }
+    
+    /* Scrollbar */
+    .modal-content::-webkit-scrollbar { width: 6px; height: 6px; }
+    .modal-content::-webkit-scrollbar-track { background: transparent; }
+    .modal-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    .modal-content::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
     .modal-title {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 18px;
-      font-weight: 700;
-      color: var(--accent-blue);
-      margin-bottom: 16px;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      display: flex;
-      align-items: center;
-      gap: 10px;
+      font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 8px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 12px;
     }
-    .modal-title::before { content: '>'; color: var(--accent-blue); }
-    .form-group { margin-bottom: 16px; width: 100%; max-width: 100%; }
-    .form-row {
-      display: flex;
-      gap: 16px;
-      width: 100%;
+    .modal-subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
+    
+    .modal-close {
+      position: absolute; top: 24px; right: 24px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-dim); border-radius: 50%; cursor: pointer; font-size: 18px; transition: all 0.2s ease;
     }
-    .form-row .form-group { flex: 1; margin-bottom: 0; min-width: 0; }
-    .form-row .form-group.version-field { flex: 0 0 150px; }
-    .form-label {
-      display: block;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      margin-bottom: 6px;
-      letter-spacing: 0.05em;
-    }
+    .modal-close:hover { color: var(--text-main); background: rgba(255,255,255,0.1); }
+
+    /* Forms */
+    .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 20px; }
+    .form-group { width: 100%; display: flex; flex-direction: column; }
+    .form-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; letter-spacing: 0.5px; }
+    
     .form-input {
-      width: 100%;
-      max-width: 100%;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid var(--border-color);
-      padding: 10px 12px;
-      color: #fff;
-      font-family: 'Inter', sans-serif;
-      font-size: 13px;
-      outline: none;
-      transition: border-color 0.3s ease;
-      box-sizing: border-box;
+      width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; color: #fff; font-family: 'Poppins', sans-serif; font-size: 13px; outline: none; transition: all 0.3s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
     }
-    .form-input:focus { border-color: var(--accent-blue); background: rgba(255, 255, 255, 0.08); }
-    .form-textarea {
-      min-height: 60px;
-      resize: vertical;
-      width: 100%;
-      max-width: 100%;
-      box-sizing: border-box;
-    }
-    /* Side by side upload layout */
-    .upload-split-container {
-      display: flex;
-      gap: 20px;
-      align-items: stretch;
-      background: rgba(255, 255, 255, 0.02);
-      border: 1px solid rgba(123, 162, 219, 0.2);
-      padding: 12px;
-      width: 100%;
-      box-sizing: border-box;
-    }
-    .upload-box {
-      flex: 1;
-      border: 1px dashed rgba(123, 162, 219, 0.45);
-      background: rgba(255, 255, 255, 0.02);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      text-align: center;
-      padding: 20px 10px;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      min-height: 100px;
-      min-width: 0;
-    }
-    .upload-box.dragover { border-color: var(--accent-blue); background: rgba(123, 162, 219, 0.12); }
-    .upload-box-title { font-size: 12px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; }
-    .upload-box-copy { font-size: 11px; color: var(--text-dim); }
-    .upload-details {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      min-width: 0;
-    }
-    .upload-file-name {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 11px;
-      color: var(--accent-blue);
-      word-break: break-all;
-      margin-bottom: 8px;
-      line-height: 1.3;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
-      overflow: hidden;
-    }
-    .upload-actions { display: flex; gap: 8px; margin-top: auto; }
-    .mini-btn {
-      padding: 8px 12px;
-      font-size: 10px;
-      flex: 1;
-      text-align: center;
-      min-height: 40px;
-      box-sizing: border-box;
-    }
-    /* Progress bar styles */
-    .progress-container {
-      width: 100%;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 3px;
-      overflow: hidden;
-      margin-bottom: 12px;
-      display: none;
-    }
-    .progress-bar-fill {
-      height: 100%;
-      width: 0%;
-      background: var(--success-green);
-      transition: width 0.2s ease, background 0.2s ease;
-    }
-    .progress-text {
-      font-size: 10px;
-      color: var(--text-dim);
-      margin-top: 4px;
-      text-align: right;
-      display: none;
-      font-family: 'JetBrains Mono', monospace;
-    }
-    .download-link-row {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-      width: 100%;
-    }
+    .form-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(218, 244, 170, 0.1); }
+    .form-input::placeholder { color: #6b7280; }
+    
+    .form-textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+    
+    select.form-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; padding-right: 40px; cursor: pointer; }
+
+    /* Upload Box */
+    .upload-split-container { display: flex; gap: 20px; align-items: stretch; background: var(--bg-input); border: 1px dashed rgba(255,255,255,0.2); border-radius: 16px; padding: 20px; width: 100%; transition: all 0.3s ease; }
+    .upload-box { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; cursor: pointer; min-height: 120px; border-radius: 12px; padding: 20px; transition: all 0.2s ease; }
+    .upload-box:hover { background: rgba(255,255,255,0.02); }
+    .upload-box.dragover { border-color: var(--accent-primary); background: rgba(218, 244, 170, 0.05); }
+    
+    .upload-icon { width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; margin-bottom: 12px; color: var(--text-dim); }
+    .upload-box-title { font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; }
+    .upload-box-copy { font-size: 12px; color: var(--text-dim); }
+    
+    .upload-details { flex: 1; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+    .upload-file-name { font-size: 13px; font-weight: 600; color: var(--text-main); word-break: break-all; margin-bottom: 12px; }
+    .upload-actions { display: flex; gap: 12px; margin-top: auto; }
+
+    /* Progress bar */
+    .progress-container { width: 100%; height: 8px; background: rgba(255, 255, 255, 0.05); border-radius: 4px; overflow: hidden; margin-bottom: 8px; display: none; }
+    .progress-bar-fill { height: 100%; width: 0%; background: var(--accent-primary); transition: width 0.2s ease; border-radius: 4px; }
+    .progress-text { font-size: 11px; font-weight: 600; color: var(--accent-primary); text-align: right; display: none; }
+
+    .download-link-row { display: flex; gap: 12px; align-items: stretch; width: 100%; }
     .download-link-row .form-input { flex: 1; min-width: 0; }
-    .download-link-row .btn { flex: 0 0 auto; }
-    .modal-actions {
-      display: flex;
-      gap: 12px;
-      margin-top: 24px;
-      width: 100%;
+    
+    /* Buttons */
+    .modal-actions { display: flex; gap: 16px; margin-top: 32px; width: 100%; border-top: 1px solid var(--border-color); padding-top: 24px; justify-content: flex-end; }
+    .btn { padding: 12px 24px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border: 1px solid transparent; height: 46px; font-family: 'Poppins', sans-serif; gap: 8px; }
+    .btn-primary { background: var(--accent-primary); color: #16161b; box-shadow: 0 4px 14px rgba(218, 244, 170, 0.15); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(218, 244, 170, 0.25); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }\n    #submitPassword { position: relative; z-index: 5; pointer-events: auto; }
+    .btn-secondary { background: var(--bg-input); border-color: var(--border-color); color: var(--text-main); }
+    .btn-secondary:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); }
+    .btn-danger { background: rgba(248, 113, 113, 0.1); color: var(--error-red); border-color: rgba(248, 113, 113, 0.2); }
+    .btn-danger:hover { background: rgba(248, 113, 113, 0.2); }
+    .btn-sm { height: 38px; padding: 8px 16px; font-size: 11px; }
+
+    .status-msg { margin-top: 16px; font-size: 13px; padding: 12px 16px; border-radius: 12px; font-weight: 500; display: none; }
+    .status-msg.error { background: rgba(248, 113, 113, 0.1); border: 1px solid rgba(248, 113, 113, 0.2); color: var(--error-red); display: block; }
+    .status-msg.success { background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.2); color: var(--success-green); display: block; }
+    
+    .current-info { position: absolute; bottom: 32px; display: flex; gap: 16px; z-index: 20; flex-wrap: wrap; justify-content: center; }
+
+    /* Data Table */
+    .targeted-list-container { margin-top: 32px; border-top: 1px solid var(--border-color); padding-top: 24px; }
+    .targeted-list-title { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+    .targeted-list-title h4 { font-size: 16px; color: var(--text-main); font-weight: 600; }
+    
+    .table-responsive { width: 100%; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-input); }
+    .release-table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; min-width: 800px; }
+    .release-table th { background: var(--bg-surface); color: var(--text-dim); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; padding: 14px 16px; border-bottom: 1px solid var(--border-color); white-space: nowrap; }
+    .release-table td { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); color: var(--text-main); vertical-align: middle; }
+    .release-table tr:last-child td { border-bottom: none; }
+    .release-table tr:hover td { background: rgba(255, 255, 255, 0.02); }
+    
+    .badge-global { background: rgba(52, 211, 153, 0.1); color: var(--success-green); border: 1px solid rgba(52, 211, 153, 0.2); padding: 4px 8px; font-size: 10px; font-weight: 700; border-radius: 6px; white-space: nowrap; }
+    .badge-targeted { background: rgba(96, 165, 250, 0.1); color: var(--accent-blue); border: 1px solid rgba(96, 165, 250, 0.2); padding: 4px 8px; font-size: 10px; font-weight: 700; border-radius: 6px; word-break: break-all; }
+    .badge-platform { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border: 1px solid var(--border-color); padding: 4px 8px; font-size: 10px; font-weight: 600; border-radius: 6px; white-space: nowrap; }
+    
+    .action-btn-group { display: flex; gap: 8px; align-items: center; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .form-grid { grid-template-columns: 1fr; gap: 16px; }
+      .upload-split-container { flex-direction: column; }
+      .upload-box { min-height: 100px; padding: 16px; }
+      .download-link-row { flex-direction: column; }
+      .download-link-row .btn { width: 100%; }
+      .modal-actions { flex-direction: column-reverse; gap: 12px; }
+      .modal-actions .btn { width: 100%; }
     }
     
-    .btn {
-      padding: 12px;
-      font-size: 12px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-family: 'JetBrains Mono', monospace;
-      border: 1px solid transparent;
-      display: inline-block;
-      text-decoration: none;
-      box-sizing: border-box;
-      max-width: 100%;
-      min-height: 44px;
-    }
-    .modal-actions .btn { flex: 1; }
-    .btn-primary { background: var(--accent-blue); color: #000; }
-    .btn-primary:hover { background: #9ab9e8; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-secondary { background: transparent; border-color: var(--border-color); color: var(--text-dim); }
-    .btn-secondary:hover { border-color: var(--text-main); color: var(--text-main); }
-    .status-msg { margin-top: 12px; font-size: 12px; display: none; }
-    .status-msg.error { color: var(--error-red); display: block; }
-    .status-msg.success { color: var(--success-green); display: block; }
-    .modal-close {
-      position: absolute;
-      top: 16px;
-      right: 20px;
-      color: var(--text-dim);
-      cursor: pointer;
-      font-size: 24px;
-      line-height: 1;
-      transition: color 0.2s ease;
-    }
-    .modal-close:hover { color: var(--text-main); }
-    .current-info {
-      position: absolute;
-      bottom: clamp(16px, 3vw, 24px);
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: 12px;
-      z-index: 20;
-      flex-wrap: wrap;
-      justify-content: center;
-      max-width: calc(100% - 32px);
-    }
-    .table-responsive {
-      width: 100%;
-      overflow-x: auto;
-      margin-top: 10px;
-      border: 1px solid var(--border-color);
-      border-radius: 4px;
-    }
-    .release-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 11px;
-      text-align: left;
-    }
-    .release-table th {
-      background: rgba(123, 162, 219, 0.1);
-      color: var(--accent-blue);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      padding: 8px 10px;
-      border-bottom: 1px solid var(--border-color);
-      white-space: nowrap;
-    }
-    .release-table td {
-      padding: 8px 10px;
-      border-bottom: 1px solid rgba(123, 162, 219, 0.1);
-      color: var(--text-main);
-      vertical-align: middle;
-    }
-    .release-table tr:last-child td {
-      border-bottom: none;
-    }
-    .release-table tr:hover td {
-      background: rgba(255, 255, 255, 0.02);
-    }
-    .badge-global {
-      background: rgba(74, 222, 128, 0.15);
-      color: var(--success-green);
-      border: 1px solid rgba(74, 222, 128, 0.3);
-      padding: 2px 6px;
-      font-size: 9px;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      border-radius: 3px;
-      white-space: nowrap;
-    }
-    .badge-targeted {
-      background: rgba(123, 162, 219, 0.15);
-      color: var(--accent-blue);
-      border: 1px solid var(--border-color);
-      padding: 2px 6px;
-      font-size: 9px;
-      font-family: 'JetBrains Mono', monospace;
-      font-weight: 700;
-      border-radius: 3px;
-      word-break: break-all;
-    }
-    .action-btn-group {
-      display: flex;
-      gap: 6px;
-      align-items: center;
-    }
-    .btn-edit {
-      background: transparent;
-      border: 1px solid var(--accent-blue);
-      color: var(--accent-blue);
-      padding: 4px 8px;
-      font-size: 10px;
-      cursor: pointer;
-      font-family: 'JetBrains Mono', monospace;
-      border-radius: 3px;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-    }
-    .btn-edit:hover {
-      background: var(--accent-blue);
-      color: #000;
-    }
-    .btn-danger {
-      background: transparent;
-      border: 1px solid var(--error-red);
-      color: var(--error-red);
-      padding: 4px 8px;
-      font-size: 10px;
-      cursor: pointer;
-      font-family: 'JetBrains Mono', monospace;
-      transition: all 0.2s ease;
-      white-space: nowrap;
-      border-radius: 3px;
-    }
-    .btn-danger:hover {
-      background: var(--error-red);
-      color: #fff;
-    }
-    .password-modal-content {
-      width: min(400px, 100%);
-    }
-
-    /* ========== Responsive breakpoints ========== */
-    @media (max-width: 700px) {
-      .form-row {
-        flex-direction: column;
-        gap: 16px;
-      }
-      .form-row .form-group.version-field {
-        flex: 1 1 auto;
-        width: 100%;
-      }
-    }
-
-    @media (max-width: 650px) {
-      .upload-split-container {
-        flex-direction: column;
-        gap: 12px;
-      }
-      .upload-box {
-        min-height: 120px;
-        width: 100%;
-      }
-      .upload-details {
-        width: 100%;
-      }
-    }
-
-    @media (max-width: 600px) {
-      .modal-content {
-        padding: 20px;
-      }
-      .form-row {
-        flex-direction: column;
-        gap: 12px;
-      }
-      .form-row .version-field {
-        flex: 1 1 auto !important;
-      }
-      .upload-split-container {
-        flex-direction: column;
-        gap: 12px;
-      }
-      .upload-box {
-        min-height: 80px;
-        padding: 14px 10px;
-      }
-      .ui-tags.tr {
-        display: none;
-      }
-      .tag {
-        font-size: 9px;
-        padding: 3px 6px;
-      }
-      .current-info {
-        gap: 8px;
-        position: relative;
-        bottom: auto;
-        left: auto;
-        transform: none;
-        margin-top: 24px;
-        margin-bottom: 16px;
-      }
-      .download-link-row {
-        flex-direction: column;
-        align-items: stretch;
-      }
-      .download-link-row .btn {
-        width: 100%;
-      }
-      .modal-actions {
-        flex-wrap: wrap;
-      }
-      .modal-actions .btn {
-        min-width: 0;
-      }
-    }
-
     @media (max-width: 480px) {
-      .modal-overlay {
-        padding: 10px;
-      }
-      .modal-content {
-        max-height: calc(100dvh - 20px);
-        padding: 16px;
-      }
-      .hero-title {
-        font-size: clamp(48px, 18vw, 120px);
-      }
-      .update-btn {
-        padding: 12px 24px;
-        font-size: 13px;
-        width: 100%;
-        max-width: calc(100vw - 48px);
-      }
-      .upload-actions {
-        flex-direction: column;
-      }
-      .upload-actions .mini-btn {
-        width: 100%;
-        min-height: 44px;
-      }
-      .modal-actions {
-        flex-direction: column;
-      }
-      .modal-actions .btn {
-        width: 100%;
-      }
-      .ascii-overlay {
-        display: none;
-      }
+      .modal-overlay { padding: 8px; }
+      .modal-content { padding: 20px; border-radius: 20px; }
+      .hero-title { font-size: clamp(40px, 15vw, 80px); }
+      .ui-tags { display: none; }
+      .current-info { position: static; margin-top: 32px; width: 100%; }
+      .update-btn { width: 100%; max-width: calc(100vw - 32px); }
     }
-
-    @media (max-width: 360px) {
-      .tag {
-        font-size: 8px;
-        padding: 2px 5px;
-      }
-      .modal-title {
-        font-size: 15px;
-      }
-    }
+  
+    body.modal-open { overflow: hidden; }
+    #passwordError { width: 100%; box-sizing: border-box; margin: 10px 0 16px; padding: 11px 14px; border-radius: 10px; font-size: 12px; line-height: 1.4; color: #ff8f8f; background: rgba(255,70,70,.10); border: 1px solid rgba(255,70,70,.25); }
+    #passwordError:empty { display: none !important; }
+    .input-error { border-color: #ff5757 !important; box-shadow: 0 0 0 3px rgba(255,87,87,.12) !important; animation: inputShake .35s ease; }
+    @keyframes inputShake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+    #submitPassword { position: relative; z-index: 100001; pointer-events: auto; cursor: pointer; }
+    #submitPassword:disabled { cursor: wait; opacity: .65; }
+    @media (max-width: 600px) { .modal-overlay { align-items: flex-start; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); } .modal-content { width: 100%; max-width: 100%; max-height: calc(100dvh - 32px); padding: 20px; border-radius: 18px; } .modal-content.small-modal { width: 100%; max-width: 100%; } .modal-actions { width: 100%; flex-direction: column-reverse; gap: 10px; } .modal-actions .btn { width: 100%; min-height: 46px; } .form-input { min-height: 46px; font-size: 14px; } }
   </style>
 </head>
 <body>
-  <div class="mountain-bg"></div>
-  <div class="ascii-overlay left">::#\n:####:\n:######:\n:########:\n:##########:\n:#::::::::::#:\n:############:</div>
-  <div class="ascii-overlay top-center">.::.\n:####:\n::####::\n:########:\n::::::::::</div>
-  <div class="tech-frame">
-    <div class="crosshair tl">+</div><div class="crosshair tr">+</div>
-    <div class="crosshair bl">+</div><div class="crosshair br">+</div>
-    <div class="ui-tags tl">
-      <div class="tag">System Status: Online</div><div class="tag">Security: Encrypted</div>
-    </div>
-    <div class="ui-tags tr">
-      <div class="tag">Envy Core v${currentData.version}</div><div class="tag">Admin Panel</div>
-    </div>
+  <!-- Background Orbs -->
+  <div class="bg-orb-1"></div>
+  <div class="bg-orb-2"></div>
+
+  <div class="ui-tags tl">
+    <div class="tag">System: Online</div>
+    <div class="tag">Security: Encrypted</div>
   </div>
+  <div class="ui-tags tr">
+    <div class="tag" style="color: var(--success-green); border-color: rgba(52,211,153,0.3);">Envy Core v${currentData.version}</div>
+    <div class="tag">Admin Panel</div>
+  </div>
+
   <main class="hero-content">
-    <h1 class="hero-title">ENVY</h1>  
-    <button class="update-btn" id="openUpdateBtn">Version Control</button>
+    <h1 class="hero-title">ENVY ERP</h1> 
+    <p class="hero-subtitle">Distribution & Version Management Console</p>
+    <button class="update-btn" id="openUpdateBtn">Manage Releases</button>
   </main>
+  
   <div class="current-info">
-    <div class="tag">Current: v${currentData.version}</div>
-    <div class="tag">Last Updated: ${new Date().toLocaleDateString()}</div>
+    <div class="tag">Current Global: v${currentData.version}</div>
+    <div class="tag">System Date: ${new Date().toLocaleDateString()}</div>
   </div>
+
+  <!-- PASSWORD MODAL -->
   <div class="modal-overlay" id="passwordModal">
-    <div class="modal-content password-modal-content">
-      <div class="modal-close" onclick="closeModal('passwordModal')">&times;</div>
-      <div class="modal-title">Authentication Required</div>
-      <p style="font-size: 12px; color: var(--text-dim); margin-bottom: 20px;">Please enter the administrator password to access version control.</p>
+    <div class="modal-content small-modal">
+      <button type="button" class="modal-close" id="closePasswordModal" aria-label="Close">&times;</button>
+      <div class="modal-title">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+        Authentication
+      </div>
+      <p class="modal-subtitle">Enter the administrator password to access version control.</p>
       
       <div class="form-group">
-        <label class="form-label">Password</label>
-        <input type="password" id="adminPassword" class="form-input" placeholder="••••••••" autofocus>
+        <input type="password" id="adminPassword" class="form-input" placeholder="••••••••" style="text-align: center; letter-spacing: 0.2em; font-size: 16px;" autofocus>
       </div>
-      <div id="passwordError" class="status-msg error">Invalid password. Access denied.</div>
+      <div id="passwordError" class="status-msg error" style="display: none;">Invalid password. Access denied.</div>
+      
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="closeModal('passwordModal')">Cancel</button>
-        <button class="btn btn-primary" id="submitPassword">Verify</button>
+        <button type="button" class="btn btn-secondary" id="cancelPasswordBtn">Cancel</button>
+        <button type="button" class="btn btn-primary" id="submitPassword">Verify Access</button>
       </div>
     </div>
   </div>
+
+  <!-- MAIN UPDATE MODAL -->
   <div class="modal-overlay" id="updateModal">
     <div class="modal-content">
-      <div class="modal-close" onclick="closeModal('updateModal')">&times;</div>
-      <div class="modal-title">Version Control</div>
+      <button type="button" class="modal-close" id="closeUpdateModal" aria-label="Close">&times;</button>
+      <div class="modal-title">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
+        Release Management
+      </div>
+      <p class="modal-subtitle">Upload new builds, manage platform releases, and configure targeted updates.</p>
       
       <input type="hidden" id="ruleId" value="">
 
-      <div class="form-row">
-        <div class="form-group version-field">
-          <label class="form-label">New Version</label>
-          <input type="text" id="newVersion" class="form-input" value="${currentData.version}">
-        </div>
+      <!-- Grid Layout for Form -->
+      <div class="form-grid">
         <div class="form-group">
-          <label class="form-label">Direct App Link (Optional)</label>
-          <input type="text" id="downloadUrl" class="form-input" value="${currentData.url}">
+          <label class="form-label">Version Number</label>
+          <input type="text" id="newVersion" class="form-input" placeholder="e.g., 1.2.0" value="${escapeHtml(currentData.version)}">
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Target Platform</label>
+          <select id="targetPlatform" class="form-input">
+            <option value="all">🌐 All Platforms (Universal Release)</option>
+            <option value="windows">💻 Windows (EXE / ZIP)</option>
+            <option value="darwin">🍎 macOS (DMG / ZIP)</option>
+            <option value="android">📱 Android (APK)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="grid-column: 1 / -1;">
+          <label class="form-label">Target Activation Keys (Optional)</label>
+          <input type="text" id="targetKeys" class="form-input" placeholder="e.g. 3CKG-CXBR-T7AT-GADM (Leave blank for Global Release)">
+        </div>
+
+        <div class="form-group" style="grid-column: 1 / -1;">
+          <label class="form-label">Direct App Download Link (Cloudinary/Dropbox/S3)</label>
+          <div class="download-link-row">
+            <input type="text" id="downloadUrl" class="form-input" placeholder="https://..." value="${escapeHtml(currentData.url)}">
+            <button type="button" class="btn btn-secondary btn-sm" id="copyDownloadUrlBtn" style="min-width: 100px;">Copy URL</button>
+            <a id="openDownloadLink" class="btn btn-secondary btn-sm" href="${escapeHtml(currentData.url)}" target="_blank" rel="noopener noreferrer">Test Link</a>
+          </div>
         </div>
       </div>
-      <div class="form-group" style="margin-top: 8px;">
-        <label class="form-label">Upload ZIP Release</label>
-        <input type="file" id="zipFileInput" accept=".zip,application/zip" hidden>
+
+      <!-- Upload Section -->
+      <div class="form-group" style="margin-bottom: 24px;">
+        <label class="form-label">Upload New Build (ZIP / EXE / DMG / APK)</label>
+        <input type="file" id="zipFileInput" accept=".zip,application/zip,.exe,.dmg,.apk" hidden>
         
         <div class="upload-split-container">
           <div id="uploadBox" class="upload-box" role="button" tabindex="0">
-            <div class="upload-box-title">Drop ZIP here</div>
-            <div class="upload-box-copy">or click to browse</div>
+            <div class="upload-icon">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            </div>
+            <div class="upload-box-title">Click or Drag file here</div>
+            <div class="upload-box-copy">Maximum file size: 500MB</div>
           </div>
           
           <div class="upload-details">
-            <div id="selectedFileName" class="upload-file-name">No file selected</div>
+            <div id="selectedFileName" class="upload-file-name" style="color: var(--text-dim); font-weight: 400;">No file selected</div>
             
             <div class="progress-container" id="progressContainer">
               <div class="progress-bar-fill" id="progressBar"></div>
             </div>
             <div class="progress-text" id="progressText">0%</div>
+            
             <div class="upload-actions">
-              <button type="button" class="btn btn-secondary mini-btn" id="browseZipBtn">Browse</button>
-              <button type="button" class="btn btn-primary mini-btn" id="uploadZipBtn">Upload</button>
+              <button type="button" class="btn btn-secondary btn-sm" id="browseZipBtn" style="flex: 1;">Browse File</button>
+              <button type="button" class="btn btn-primary btn-sm" id="uploadZipBtn" style="flex: 1;" disabled>Start Upload</button>
             </div>
           </div>
         </div>
       </div>
+
+      <!-- Changelog -->
       <div class="form-group">
-        <label class="form-label">Auto-Download Link</label>
-        <div class="download-link-row">
-          <input type="text" id="generatedDownloadUrl" class="form-input" value="${currentData.url}" readonly>
-          <button type="button" class="btn btn-secondary mini-btn" id="copyDownloadUrlBtn">Copy</button>
-          <a id="openDownloadLink" class="btn btn-primary mini-btn" href="${currentData.url}" target="_blank" rel="noopener noreferrer">Test URL</a>
-        </div>
+        <label class="form-label">Release Notes / Changelog</label>
+        <textarea id="changeLog" class="form-input form-textarea" placeholder="List new features, bug fixes, and improvements...">${escapeHtml(currentData.changeLog)}</textarea>
       </div>
-      <div class="form-group">
-        <label class="form-label">Target Activation Keys (Optional)</label>
-        <input type="text" id="targetKeys" class="form-input" placeholder="e.g. 3CKG-CXBR-T7AT-GADM, 4XYZ-8899-AAAA-BBBB (Leave blank for Global Release)">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Change Log</label>
-        <textarea id="changeLog" class="form-input form-textarea">${currentData.changeLog}</textarea>
-      </div>
+
       <div id="updateStatus" class="status-msg"></div>
+
       <div class="modal-actions">
-        <button class="btn btn-secondary" onclick="resetReleaseForm()">Reset Form</button>
-        <button class="btn btn-primary" id="submitUpdate">Apply Update</button>
+        <button type="button" class="btn btn-secondary" id="clearFormBtn">Clear Form</button>
+        <button type="button" class="btn btn-primary" id="submitUpdate" style="min-width: 200px;">Deploy Release</button>
       </div>
+
+      <!-- Releases Table -->
       <div class="targeted-list-container">
         <div class="targeted-list-title">
-          <span>Release Entries Management Table</span>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <span style="font-size: 10px; color: var(--text-dim);" id="targetedCount">0 Entries</span>
-            <button type="button" class="btn btn-secondary mini-btn" style="min-height: 28px; padding: 4px 8px;" onclick="resetReleaseForm()">+ New Release</button>
+          <h4>Active Release Branches</h4>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <span style="font-size: 11px; font-weight: 600; color: var(--text-dim); background: var(--bg-input); padding: 6px 12px; border-radius: 8px;" id="targetedCount">0 Releases</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="newReleaseBtn">+ New Release</button>
           </div>
         </div>
         
@@ -857,16 +541,17 @@ const renderAdminPage = (currentData) => `
           <table class="release-table">
             <thead>
               <tr>
-                <th>Scope / Key(s)</th>
-                <th>Version</th>
-                <th>Download Link / File</th>
-                <th>Changelog</th>
-                <th>Actions</th>
+                <th style="width: 20%;">Scope / Key(s)</th>
+                <th style="width: 15%;">Platform</th>
+                <th style="width: 10%;">Version</th>
+                <th style="width: 25%;">Distribution Link</th>
+                <th style="width: 20%;">Notes</th>
+                <th style="width: 10%; text-align: center;">Actions</th>
               </tr>
             </thead>
             <tbody id="releasesTableBody">
               <tr>
-                <td colspan="5" style="text-align: center; color: var(--text-dim); padding: 16px;">Loading releases table...</td>
+                <td colspan="6" style="text-align: center; color: var(--text-dim); padding: 32px;">Loading release configurations...</td>
               </tr>
             </tbody>
           </table>
@@ -874,14 +559,19 @@ const renderAdminPage = (currentData) => `
       </div>
     </div>
   </div>
+
   <script>
     const openUpdateBtn = document.getElementById('openUpdateBtn');
     const passwordModal = document.getElementById('passwordModal');
     const updateModal = document.getElementById('updateModal');
-    
+
     const adminPasswordInput = document.getElementById('adminPassword');
     const submitPasswordBtn = document.getElementById('submitPassword');
     const passwordError = document.getElementById('passwordError');
+    const cancelPasswordBtn = document.getElementById('cancelPasswordBtn');
+    const closePasswordModalBtn = document.getElementById('closePasswordModal');
+    const closeUpdateModalBtn = document.getElementById('closeUpdateModal');
+
     const submitUpdateBtn = document.getElementById('submitUpdate');
     const updateStatus = document.getElementById('updateStatus');
     const downloadUrlInput = document.getElementById('downloadUrl');
@@ -890,110 +580,257 @@ const renderAdminPage = (currentData) => `
     const browseZipBtn = document.getElementById('browseZipBtn');
     const uploadZipBtn = document.getElementById('uploadZipBtn');
     const selectedFileName = document.getElementById('selectedFileName');
-    
-    // Progress bar elements
+
     const progressContainer = document.getElementById('progressContainer');
     const progressBar = document.getElementById('progressBar');
     const progressText = document.getElementById('progressText');
-    const generatedDownloadUrl = document.getElementById('generatedDownloadUrl');
     const copyDownloadUrlBtn = document.getElementById('copyDownloadUrlBtn');
     const openDownloadLink = document.getElementById('openDownloadLink');
+    const clearFormBtn = document.getElementById('clearFormBtn');
+    const newReleaseBtn = document.getElementById('newReleaseBtn');
+
     let selectedZipFile = null;
     let allReleases = [];
 
-    openUpdateBtn.addEventListener('click', () => {
-      adminPasswordInput.value = '';
-      passwordError.classList.remove('error');
+    function openModal(id) {
+      const el = document.getElementById(id);
+      if (!el) {
+        console.error('Modal not found:', id);
+        return;
+      }
+      el.classList.add('active');
+      document.body.classList.add('modal-open');
+    }
+
+    function closeModal(id) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.remove('active');
+      if (!document.querySelector('.modal-overlay.active')) {
+        document.body.classList.remove('modal-open');
+      }
+    }
+
+    function clearPasswordError() {
+      if (!passwordError) return;
+      passwordError.textContent = '';
+      passwordError.style.display = 'none';
+    }
+
+    function showPasswordError(message) {
+      if (!passwordError) return;
+      passwordError.textContent = message || 'Invalid password. Access denied.';
+      passwordError.style.display = 'block';
+      passwordError.classList.add('error');
+      if (adminPasswordInput) {
+        adminPasswordInput.classList.add('input-error');
+        setTimeout(() => adminPasswordInput.classList.remove('input-error'), 500);
+      }
+    }
+
+    function openVersionControlModal() {
+      clearPasswordError();
+      if (adminPasswordInput) adminPasswordInput.value = '';
       openModal('passwordModal');
-      setTimeout(() => adminPasswordInput.focus(), 100);
-    });
-    function openModal(id) { document.getElementById(id).classList.add('active'); }
-    function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+      setTimeout(() => adminPasswordInput?.focus(), 120);
+    }
+
+    window.openModal = openModal;
+    window.closeModal = closeModal;
+    window.openVersionControlModal = openVersionControlModal;
+
+    if (openUpdateBtn) {
+      openUpdateBtn.addEventListener('click', async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openVersionControlModal();
+
+        // Skip the password step when the admin session cookie is still valid.
+        try {
+          const res = await fetch('/api/version/admin/session', { credentials: 'same-origin' });
+          const data = await res.json();
+          if (data?.authenticated) {
+            closeModal('passwordModal');
+            setTimeout(() => {
+              openModal('updateModal');
+              loadReleasesTable();
+            }, 120);
+          }
+        } catch (_) { /* stay on the password step */ }
+      });
+    }
+
     async function handleLogin() {
-      const password = adminPasswordInput.value;
-      if (!password) return;
-      submitPasswordBtn.innerText = 'Verifying...';
+      if (!adminPasswordInput || !submitPasswordBtn) return;
+
+      const password = adminPasswordInput.value.trim();
+
+      if (!password) {
+        showPasswordError('Please enter administrator password.');
+        adminPasswordInput.focus();
+        return;
+      }
+
+      clearPasswordError();
       submitPasswordBtn.disabled = true;
+      submitPasswordBtn.textContent = 'Verifying...';
+      submitPasswordBtn.style.pointerEvents = 'none';
+      
       try {
         const response = await fetch('/api/version/admin/login', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'same-origin',
           body: JSON.stringify({ password })
         });
-        if (response.ok) {
-          closeModal('passwordModal');
-          openModal('updateModal');
-          loadReleasesTable();
-        } else {
-          passwordError.classList.add('error');
+
+        let data = {};
+        const responseText = await response.text();
+        if (responseText) {
+          try { data = JSON.parse(responseText); } catch (_) {}
         }
-      } catch (err) {
-        passwordError.innerText = 'Server error. Please try again.';
-        passwordError.classList.add('error');
+
+        if (!response.ok) {
+          showPasswordError(
+            data.message || data.error || 'Authentication failed (' + response.status + ').'
+          );
+          adminPasswordInput.focus();
+          return;
+        }
+
+        closeModal('passwordModal');
+
+        setTimeout(() => {
+          openModal('updateModal');
+          if (typeof loadReleasesTable === 'function') {
+            loadReleasesTable();
+          }
+        }, 180);
+
+      } catch (error) {
+        console.error('Version admin login error:', error);
+        showPasswordError('Unable to connect to the server. Please try again.');
       } finally {
-        submitPasswordBtn.innerText = 'Verify';
         submitPasswordBtn.disabled = false;
+        submitPasswordBtn.textContent = 'Verify Access';
+        submitPasswordBtn.style.pointerEvents = 'auto';
       }
     }
-    submitPasswordBtn.addEventListener('click', handleLogin);
-    adminPasswordInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') handleLogin();
+
+    window._handleLoginImpl = handleLogin;
+    window.handleLogin = handleLogin;
+
+    if (submitPasswordBtn) {
+      submitPasswordBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        handleLogin();
+      });
+    }
+
+    if (adminPasswordInput) {
+      adminPasswordInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          handleLogin();
+        }
+      });
+    }
+
+    function closePasswordAuthentication() {
+      clearPasswordError();
+      if (adminPasswordInput) adminPasswordInput.value = '';
+      closeModal('passwordModal');
+    }
+
+    cancelPasswordBtn?.addEventListener('click', closePasswordAuthentication);
+    closePasswordModalBtn?.addEventListener('click', closePasswordAuthentication);
+    closeUpdateModalBtn?.addEventListener('click', () => closeModal('updateModal'));
+
+    // Close on backdrop click (clicks inside the modal are ignored)
+    passwordModal?.addEventListener('mousedown', (event) => {
+      if (event.target === passwordModal) closePasswordAuthentication();
     });
+    updateModal?.addEventListener('mousedown', (event) => {
+      if (event.target === updateModal) closeModal('updateModal');
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      if (passwordModal?.classList.contains('active')) closePasswordAuthentication();
+      else if (updateModal?.classList.contains('active')) closeModal('updateModal');
+    });
+
     function setStatus(message, type = 'error') {
       updateStatus.innerText = message;
       updateStatus.className = 'status-msg ' + type;
     }
+
     function updateSelectedFile(file) {
       selectedZipFile = file || null;
-      selectedFileName.innerText = selectedZipFile ? selectedZipFile.name : 'No file selected';
+      if (selectedZipFile) {
+        selectedFileName.innerText = file.name;
+        selectedFileName.style.color = 'var(--text-main)';
+        uploadZipBtn.disabled = false;
+        uploadBox.style.borderColor = 'var(--success-green)';
+      } else {
+        if (zipFileInput) zipFileInput.value = '';
+        selectedFileName.innerText = 'No file selected';
+        selectedFileName.style.color = 'var(--text-dim)';
+        uploadZipBtn.disabled = true;
+        uploadBox.style.borderColor = 'rgba(255,255,255,0.2)';
+      }
       
-      // Reset progress bar on new file selection
       progressContainer.style.display = 'none';
       progressText.style.display = 'none';
       progressBar.style.width = '0%';
-      progressBar.style.backgroundColor = 'var(--accent-blue)';
+      progressBar.style.backgroundColor = 'var(--accent-primary)';
     }
-    function isZipFile(file) { return file && file.name && file.name.toLowerCase().endsWith('.zip'); }
+
     browseZipBtn.addEventListener('click', () => zipFileInput.click());
     uploadBox.addEventListener('click', () => zipFileInput.click());
+    
     downloadUrlInput.addEventListener('input', () => {
-      generatedDownloadUrl.value = downloadUrlInput.value;
       openDownloadLink.href = downloadUrlInput.value;
     });
+
     uploadBox.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault(); zipFileInput.click();
       }
     });
+
     zipFileInput.addEventListener('change', () => {
       const file = zipFileInput.files && zipFileInput.files[0];
       if (!file) return updateSelectedFile(null);
-      if (!isZipFile(file)) {
-        setStatus('Please select a .zip file.', 'error');
-        zipFileInput.value = ''; updateSelectedFile(null); return;
-      }
-      setStatus('ZIP selected and ready to upload.', 'success');
+      setStatus('File ready to upload.', 'success');
       updateSelectedFile(file);
     });
+
     uploadBox.addEventListener('dragover', (event) => {
       event.preventDefault(); uploadBox.classList.add('dragover');
     });
+
     uploadBox.addEventListener('dragleave', () => {
       uploadBox.classList.remove('dragover');
     });
+
     uploadBox.addEventListener('drop', (event) => {
       event.preventDefault(); uploadBox.classList.remove('dragover');
       const file = event.dataTransfer.files && event.dataTransfer.files[0];
       if (!file) return;
-      if (!isZipFile(file)) { setStatus('Only .zip files are supported.', 'error'); return; }
       const transfer = new DataTransfer();
       transfer.items.add(file);
       zipFileInput.files = transfer.files;
       updateSelectedFile(file);
-      setStatus('ZIP selected and ready to upload.', 'success');
+      setStatus('File ready to upload.', 'success');
     });
+
     async function uploadZipToCloudinary(file) {
-      // 1. Get Signature via fetch
       const signatureResponse = await fetch('/api/version/admin/upload-signature', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1012,75 +849,87 @@ const renderAdminPage = (currentData) => `
       formData.append('folder', signatureData.folder);
       formData.append('public_id', signatureData.publicId);
       formData.append('overwrite', 'true');
-      // 2. Upload via XHR to track progress
+      
       return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         xhr.open('POST', uploadUrl, true);
-        // Display progress bar UI
         progressContainer.style.display = 'block';
         progressText.style.display = 'block';
+        
         xhr.upload.onprogress = (e) => {
           if (e.lengthComputable) {
             const percentComplete = Math.round((e.loaded / e.total) * 100);
             progressBar.style.width = percentComplete + '%';
-            progressText.innerText = percentComplete + '%';
+            progressText.innerText = percentComplete + '% Uploaded';
           }
         };
+        
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
             const uploadData = JSON.parse(xhr.responseText);
             const downloadUrl = uploadData.secure_url.includes('/upload/')
               ? uploadData.secure_url.replace('/upload/', '/upload/fl_attachment:' + encodeURIComponent(file.name) + '/')
               : uploadData.secure_url;
-            generatedDownloadUrl.value = downloadUrl;
             downloadUrlInput.value = downloadUrl;
             openDownloadLink.href = downloadUrl;
             progressBar.style.backgroundColor = 'var(--success-green)';
-            progressText.innerText = 'Upload Complete';
+            progressText.innerText = 'Upload Complete!';
             
             resolve({ downloadUrl, assetId: uploadData.public_id, fileName: file.name });
           } else {
-            let errorMessage = 'ZIP upload failed.';
+            let errorMessage = 'Upload failed.';
             try {
               const errorObj = JSON.parse(xhr.responseText);
               errorMessage = errorObj.error?.message || errorMessage;
             } catch(e) {}
             
             progressBar.style.backgroundColor = 'var(--error-red)';
+            progressText.innerText = 'Failed';
             reject(new Error(errorMessage));
           }
         };
         xhr.onerror = () => {
           progressBar.style.backgroundColor = 'var(--error-red)';
+          progressText.innerText = 'Network Error';
           reject(new Error('Network error during upload.'));
         };
         xhr.send(formData);
       });
     }
-    uploadZipBtn.addEventListener('click', async () => {
-      if (!selectedZipFile) { setStatus('Choose a ZIP file first.', 'error'); return; }
+
+    async function handleUploadZip() {
+      if (!selectedZipFile) { setStatus('Choose a file first.', 'error'); return; }
       uploadZipBtn.innerText = 'Uploading...';
       uploadZipBtn.disabled = true;
       browseZipBtn.disabled = true;
-      setStatus('Uploading ZIP and generating a download link...', 'success');
+      setStatus('Uploading file and generating secure link...', 'success');
       try {
         const result = await uploadZipToCloudinary(selectedZipFile);
-        setStatus('Download link created for ' + result.fileName + '.', 'success');
+        setStatus('Secure distribution link generated for ' + result.fileName, 'success');
       } catch (error) {
         setStatus(error.message || 'Upload failed.', 'error');
       } finally {
-        uploadZipBtn.innerText = 'Upload';
+        uploadZipBtn.innerText = 'Start Upload';
         uploadZipBtn.disabled = false;
         browseZipBtn.disabled = false;
       }
-    });
-    copyDownloadUrlBtn.addEventListener('click', async () => {
+    }
+    window._handleUploadZipImpl = handleUploadZip;
+    window.handleUploadZip = handleUploadZip;
+    if (uploadZipBtn) uploadZipBtn.addEventListener('click', handleUploadZip);
+
+    async function handleCopyUrl() {
+      if (!downloadUrlInput.value) return;
       try {
-        await navigator.clipboard.writeText(generatedDownloadUrl.value);
+        await navigator.clipboard.writeText(downloadUrlInput.value);
         copyDownloadUrlBtn.innerText = 'Copied!';
-        setTimeout(() => { copyDownloadUrlBtn.innerText = 'Copy'; }, 1500);
-      } catch (error) { setStatus('Could not copy the download link.', 'error'); }
-    });
+        setTimeout(() => { copyDownloadUrlBtn.innerText = 'Copy URL'; }, 2000);
+      } catch (error) { setStatus('Could not copy link.', 'error'); }
+    }
+    window._handleCopyUrlImpl = handleCopyUrl;
+    window.handleCopyUrl = handleCopyUrl;
+    if (copyDownloadUrlBtn) copyDownloadUrlBtn.addEventListener('click', handleCopyUrl);
+
     async function loadReleasesTable() {
       const tbody = document.getElementById('releasesTableBody');
       const countEl = document.getElementById('targetedCount');
@@ -1088,70 +937,89 @@ const renderAdminPage = (currentData) => `
       try {
         const res = await fetch('/api/version/admin/targeted');
         if (!res.ok) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--error-red);">Failed to load release entries.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--error-red); padding: 32px;">Failed to load release entries.</td></tr>';
           return;
         }
         allReleases = await res.json();
-        if (countEl) countEl.innerText = (allReleases.length || 0) + ' Release(s)';
+        if (countEl) countEl.innerText = (allReleases.length || 0) + ' Releases';
+        
         if (!allReleases || allReleases.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--text-dim); font-style: italic; padding: 16px;">No release entries found.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-dim); padding: 32px;">No release entries found. Start by creating a new release.</td></tr>';
           return;
         }
-        tbody.innerHTML = allReleases.map((item) => {
+        
+        const escHtml = (value) => String(value ?? '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+
+        tbody.innerHTML = allReleases.map(function(item) {
           const isGlobal = item.key === 'default';
+          const keysText = Array.isArray(item.targetKeys) ? item.targetKeys.join(', ') : (item.targetKeys || 'Key Specific');
           const scopeBadge = isGlobal
             ? '<span class="badge-global">GLOBAL DEFAULT</span>'
-            : \`<span class="badge-targeted">🔑 \${Array.isArray(item.targetKeys) ? item.targetKeys.join(', ') : (item.targetKeys || 'Key Specific')}</span>\`;
-          const rawUrl = item.url || '';
-          const truncatedUrl = rawUrl.length > 30 ? rawUrl.substring(0, 30) + '...' : rawUrl;
-          return \`<tr>
-              <td>\${scopeBadge}</td>
-              <td style="font-family: 'JetBrains Mono', monospace; font-weight: 700; color: var(--success-green);">v\${item.version}</td>
-              <td>
-                <a href="\${rawUrl}" target="_blank" style="color: var(--accent-blue); text-decoration: none;" title="\${rawUrl}">
-                  \${truncatedUrl}
-                </a>
-              </td>
-              <td style="max-width: 180px; white-space: pre-wrap; font-size: 11px; color: var(--text-dim);">\${item.changeLog || '-'}</td>
-              <td>
-                <div class="action-btn-group">
-                  <button type="button" class="btn-edit" onclick="editReleaseRule('\${item._id}')">Edit</button>
-                  \${!isGlobal ? \`<button type="button" class="btn-danger" onclick="deleteReleaseRule('\${item._id}')">Delete</button>\` : ''}
-                </div>
-              </td>
-            </tr>\`;
+            : '<span class="badge-targeted">🔑 ' + escHtml(keysText) + '</span>';
+
+          const platStr = String(item.platform || 'all').toLowerCase();
+          const platBadgeStr = platStr === 'android' ? '📱 Android' : platStr === 'windows' ? '💻 Windows' : platStr === 'darwin' ? '🍎 macOS' : '🌐 Universal';
+          const platBadge = '<span class="badge-platform">' + platBadgeStr + '</span>';
+
+          const rawUrl = String(item.url || '');
+          const truncatedUrl = rawUrl.length > 35 ? rawUrl.substring(0, 35) + '...' : rawUrl;
+          const deleteBtn = isGlobal ? '' : '<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="' + escHtml(item._id) + '">Delete</button>';
+
+          return '<tr data-id="' + escHtml(item._id) + '">' +
+            '<td>' + scopeBadge + '</td>' +
+            '<td>' + platBadge + '</td>' +
+            '<td style="font-family: monospace; font-weight: 700; color: var(--accent-primary);">v' + escHtml(item.version) + '</td>' +
+            '<td><a href="' + escHtml(rawUrl) + '" target="_blank" rel="noopener noreferrer" style="color: var(--accent-blue); text-decoration: none; font-size: 12px; font-family: monospace;" title="' + escHtml(rawUrl) + '">' + escHtml(truncatedUrl) + '</a></td>' +
+            '<td style="max-width: 200px; white-space: pre-wrap; font-size: 11px; color: var(--text-dim); line-height: 1.4;">' + escHtml(item.changeLog || '-') + '</td>' +
+            '<td style="text-align: center;"><div class="action-btn-group" style="justify-content: center;"><button type="button" class="btn btn-secondary btn-sm" data-action="edit" data-id="' + escHtml(item._id) + '">Edit</button>' + deleteBtn + '</div></td>' +
+            '</tr>';
         }).join('');
       } catch (err) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: var(--error-red);">Error loading release entries.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--error-red); padding: 32px;">Network error loading releases.</td></tr>';
       }
     }
+
     function editReleaseRule(id) {
       const item = allReleases.find(r => r._id === id);
       if (!item) return;
       document.getElementById('ruleId').value = item._id;
       document.getElementById('newVersion').value = item.version;
       document.getElementById('downloadUrl').value = item.url;
-      document.getElementById('generatedDownloadUrl').value = item.url;
       document.getElementById('openDownloadLink').href = item.url;
       document.getElementById('changeLog').value = item.changeLog || '';
+      document.getElementById('targetPlatform').value = item.platform || 'all';
+      
       if (item.key === 'default') {
         document.getElementById('targetKeys').value = '';
         submitUpdateBtn.innerText = 'Save Global Release (v' + item.version + ')';
       } else {
         document.getElementById('targetKeys').value = Array.isArray(item.targetKeys) ? item.targetKeys.join(', ') : (item.targetKeys || '');
-        submitUpdateBtn.innerText = 'Save Key Release (v' + item.version + ')';
+        submitUpdateBtn.innerText = 'Save Release Rule (v' + item.version + ')';
       }
-      setStatus('Editing release entry. Upload new ZIP or change values and click Save.', 'success');
-      document.querySelector('.modal-content').scrollTo({ top: 0, behavior: 'smooth' });
+      setStatus('Editing release configuration.', 'success');
+      document.querySelector('#updateModal .modal-content')?.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
     function resetReleaseForm() {
       document.getElementById('ruleId').value = '';
       document.getElementById('targetKeys').value = '';
-      submitUpdateBtn.innerText = 'Apply Update';
-      setStatus('Form ready for new key or global release.', 'success');
+      document.getElementById('targetPlatform').value = 'all';
+      document.getElementById('changeLog').value = '';
+      document.getElementById('newVersion').value = '';
+      downloadUrlInput.value = '';
+      updateSelectedFile(null);
+      submitUpdateBtn.innerText = 'Deploy Release';
+      setStatus('Ready for new release configuration.', 'success');
+      document.querySelector('#updateModal .modal-content')?.scrollTo({ top: 0, behavior: 'smooth' });
     }
+
     async function deleteReleaseRule(id) {
-      if (!confirm('Are you sure you want to delete this targeted key release rule? Key(s) will revert to receiving the Global Release.')) return;
+      if (!confirm('Permanently delete this targeted release rule?')) return;
       try {
         const res = await fetch('/api/version/admin/targeted/' + id, { method: 'DELETE' });
         if (res.ok) {
@@ -1161,24 +1029,45 @@ const renderAdminPage = (currentData) => `
           setStatus('Failed to delete release rule.', 'error');
         }
       } catch (err) {
-        setStatus('Network error when deleting release rule.', 'error');
+        setStatus('Network error when deleting release.', 'error');
       }
     }
+
+    window._editReleaseRuleImpl = editReleaseRule;
+    window._resetReleaseFormImpl = resetReleaseForm;
+    window._deleteReleaseRuleImpl = deleteReleaseRule;
     window.editReleaseRule = editReleaseRule;
     window.resetReleaseForm = resetReleaseForm;
     window.deleteReleaseRule = deleteReleaseRule;
+
+    // Row actions via event delegation (no inline onclick needed)
+    document.getElementById('releasesTableBody')?.addEventListener('click', (event) => {
+      const btn = event.target.closest('button[data-action]');
+      if (!btn) return;
+      const id = btn.getAttribute('data-id');
+      if (!id) return;
+      if (btn.getAttribute('data-action') === 'edit') editReleaseRule(id);
+      else if (btn.getAttribute('data-action') === 'delete') deleteReleaseRule(id);
+    });
+
+    if (clearFormBtn) clearFormBtn.addEventListener('click', resetReleaseForm);
+    if (newReleaseBtn) newReleaseBtn.addEventListener('click', resetReleaseForm);
+
     async function handleUpdate() {
       const data = {
         ruleId: document.getElementById('ruleId').value,
         version: document.getElementById('newVersion').value,
         url: downloadUrlInput.value,
         changeLog: document.getElementById('changeLog').value,
-        targetKeys: document.getElementById('targetKeys').value
+        targetKeys: document.getElementById('targetKeys').value,
+        platform: document.getElementById('targetPlatform').value
       };
+      
       if (!data.version || !data.url || !data.changeLog) {
-        setStatus('All fields except target keys are required.', 'error'); return;
+        setStatus('Version, Download Link, and Changelog are required.', 'error'); return;
       }
-      submitUpdateBtn.innerText = 'Processing...';
+      
+      submitUpdateBtn.innerText = 'Deploying...';
       submitUpdateBtn.disabled = true;
       try {
         const response = await fetch('/api/version/update', {
@@ -1188,20 +1077,23 @@ const renderAdminPage = (currentData) => `
         });
         const result = await response.json();
         if (response.ok) {
-          setStatus('Release updated successfully.', 'success');
+          setStatus('Release deployed successfully.', 'success');
           resetReleaseForm();
           loadReleasesTable();
         } else {
-          setStatus(result.message || 'Update failed.', 'error');
+          setStatus(result.message || 'Deployment failed.', 'error');
         }
       } catch (err) {
-        setStatus('Network error. Update failed.', 'error');
+        setStatus('Network error. Deployment failed.', 'error');
       } finally {
-        submitUpdateBtn.innerText = 'Apply Update';
+        submitUpdateBtn.innerText = 'Deploy Release';
         submitUpdateBtn.disabled = false;
       }
     }
-    submitUpdateBtn.addEventListener('click', handleUpdate);
+    
+    window._handleUpdateImpl = handleUpdate;
+    window.handleUpdate = handleUpdate;
+    if (submitUpdateBtn) submitUpdateBtn.addEventListener('click', handleUpdate);
   </script>
 </body>
 </html>
@@ -1210,7 +1102,8 @@ const renderAdminPage = (currentData) => `
 export const getVersion = async (req, res, next) => {
   try {
     const activationKey = req.query.key || req.headers['x-activation-key'] || req.body?.key;
-    const versionData = await getVersionRecord(activationKey);
+    const platform = req.query.platform || req.headers['x-platform'] || req.body?.platform || 'all';
+    const versionData = await getVersionRecord(activationKey, platform);
     res.status(200).json(versionData);
   } catch (error) {
     next(error);
@@ -1293,11 +1186,13 @@ export const updateVersion = async (req, res, next) => {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
 
-    const { ruleId, version, url, changeLog, targetKeys } = req.body ?? {};
+    const { ruleId, version, url, changeLog, targetKeys, platform } = req.body ?? {};
 
     if (!version || !url || !changeLog) {
       return res.status(400).json({ message: 'version, url, and changeLog are required.' });
     }
+
+    const targetPlatform = String(platform || 'all').toLowerCase().trim();
 
     const resolvedUrl = String(url).includes('cloudinary.com')
       ? buildCloudinaryDownloadUrl(String(url).trim())
@@ -1321,6 +1216,7 @@ export const updateVersion = async (req, res, next) => {
           url: resolvedUrl,
           changeLog: String(changeLog).trim(),
           targetKeys: formattedTargetKeys,
+          platform: targetPlatform,
           active: true,
         },
         { new: true }
@@ -1336,6 +1232,7 @@ export const updateVersion = async (req, res, next) => {
         version: updated.version,
         url: updated.url,
         changeLog: updated.changeLog,
+        platform: updated.platform,
         targetKeys: updated.targetKeys,
       });
     }
@@ -1349,29 +1246,33 @@ export const updateVersion = async (req, res, next) => {
         url: resolvedUrl,
         changeLog: String(changeLog).trim(),
         targetKeys: formattedTargetKeys,
+        platform: targetPlatform,
         status: 'success',
         active: true,
       });
 
       return res.status(200).json({
-        message: `Targeted update created successfully for key(s): ${formattedTargetKeys.join(', ')}`,
+        message: `Targeted update created successfully for key(s): ${formattedTargetKeys.join(', ')} (${targetPlatform})`,
         id: created._id,
         version: created.version,
         url: created.url,
         changeLog: created.changeLog,
+        platform: created.platform,
         targetKeys: created.targetKeys,
         isTargeted: true,
       });
     }
 
-    // 3. Otherwise update default release
+    // 3. Platform specific or global default release
+    const ruleKey = targetPlatform === 'all' ? 'default' : targetPlatform;
     const updated = await VersionConfig.findOneAndUpdate(
-      { key: 'default' },
+      { key: ruleKey },
       {
-        key: 'default',
+        key: ruleKey,
         version: String(version).trim(),
         url: resolvedUrl,
         changeLog: String(changeLog).trim(),
+        platform: targetPlatform,
         status: 'success',
       },
       {
@@ -1383,9 +1284,10 @@ export const updateVersion = async (req, res, next) => {
     ).lean();
 
     return res.status(200).json({
-      message: 'Global version updated successfully.',
+      message: `${targetPlatform.toUpperCase()} release updated successfully.`,
       version: updated.version,
       url: updated.url,
+      platform: updated.platform,
       status: updated.status,
       changeLog: updated.changeLog,
     });
