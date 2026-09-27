@@ -37,37 +37,48 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
   const normPlatform = String(clientPlatform || 'all').toLowerCase().trim();
   const platform = normPlatform === 'win32' ? 'windows' : normPlatform;
 
+  const emptyTargetKeysQuery = {
+    $or: [
+      { targetKeys: { $exists: false } },
+      { targetKeys: { $size: 0 } },
+      { targetKeys: null },
+    ],
+  };
+
   try {
     // 1. If key provided, check targeted key rule for requested platform or universal
     if (activationKey) {
       const rawKey = String(activationKey).trim().toUpperCase();
       const strippedKey = rawKey.replace(/[^A-Za-z0-9]/g, '');
 
-      const targetedRecord = await VersionConfig.findOne({
-        targetKeys: { $in: [rawKey, strippedKey] },
-        active: { $ne: false },
-        $or: [{ platform }, { platform: 'all' }, { platform: {$exists: false } }],
-      })
-        .sort({ updatedAt: -1 })
-        .lean();
+      if (rawKey.length > 0) {
+        const targetedRecord = await VersionConfig.findOne({
+          targetKeys: { $in: [rawKey, strippedKey] },
+          active: { $ne: false },
+          $or: [{ platform }, { platform: 'all' }, { platform: { $exists: false } }],
+        })
+          .sort({ updatedAt: -1 })
+          .lean();
 
-      if (targetedRecord) {
-        return {
-          version: targetedRecord.version,
-          url: targetedRecord.url,
-          platform: targetedRecord.platform || 'all',
-          status: targetedRecord.status || 'success',
-          changeLog: targetedRecord.changeLog,
-          isTargeted: true,
-        };
+        if (targetedRecord) {
+          return {
+            version: targetedRecord.version,
+            url: targetedRecord.url,
+            platform: targetedRecord.platform || 'all',
+            status: targetedRecord.status || 'success',
+            changeLog: targetedRecord.changeLog,
+            isTargeted: true,
+          };
+        }
       }
     }
 
-    // 2. Check platform-specific release rule (e.g. platform: 'android' or 'windows')
+    // 2. Check platform-specific global release rule (excluding key-targeted releases)
     if (platform !== 'all') {
       const platformRecord = await VersionConfig.findOne({
         $or: [{ platform }, { key: platform }],
         active: { $ne: false },
+        ...emptyTargetKeysQuery,
       })
         .sort({ updatedAt: -1 })
         .lean();
@@ -79,12 +90,23 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
           platform: platformRecord.platform || platform,
           status: platformRecord.status || 'success',
           changeLog: platformRecord.changeLog,
+          isTargeted: false,
         };
       }
     }
 
-    // 3. Fallback to default release rule
-    let versionRecord = await VersionConfig.findOne({ key: 'default' }).lean();
+    // 3. Fallback to default/universal global release rule (excluding key-targeted releases)
+    let versionRecord = await VersionConfig.findOne({
+      $or: [{ key: 'default' }, { platform: 'all' }],
+      active: { $ne: false },
+      ...emptyTargetKeysQuery,
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+
+    if (!versionRecord) {
+      versionRecord = await VersionConfig.findOne({ key: 'default', ...emptyTargetKeysQuery }).lean();
+    }
 
     if (!versionRecord) {
       const created = await VersionConfig.create(DEFAULT_VERSION_DATA);
@@ -97,6 +119,7 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
       platform: versionRecord.platform || 'all',
       status: versionRecord.status || 'success',
       changeLog: versionRecord.changeLog,
+      isTargeted: false,
     };
   } catch (error) {
     console.warn('⚠️ MongoDB query failed in getVersionRecord. Falling back to default data.', error.message);
@@ -106,6 +129,7 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
       platform: 'all',
       status: DEFAULT_VERSION_DATA.status || 'success',
       changeLog: DEFAULT_VERSION_DATA.changeLog,
+      isTargeted: false,
     };
   }
 };
@@ -956,10 +980,10 @@ const renderAdminPage = (currentData) => `
           .replace(/'/g, '&#39;');
 
         tbody.innerHTML = allReleases.map(function(item) {
-          const isGlobal = item.key === 'default';
-          const keysText = Array.isArray(item.targetKeys) ? item.targetKeys.join(', ') : (item.targetKeys || 'Key Specific');
-          const scopeBadge = isGlobal
-            ? '<span class="badge-global">GLOBAL DEFAULT</span>'
+          const hasTargetKeys = Array.isArray(item.targetKeys) && item.targetKeys.length > 0;
+          const keysText = hasTargetKeys ? item.targetKeys.join(', ') : '';
+          const scopeBadge = !hasTargetKeys
+            ? '<span class="badge-global">GLOBAL RELEASE</span>'
             : '<span class="badge-targeted">🔑 ' + escHtml(keysText) + '</span>';
 
           const platStr = String(item.platform || 'all').toLowerCase();
@@ -968,7 +992,7 @@ const renderAdminPage = (currentData) => `
 
           const rawUrl = String(item.url || '');
           const truncatedUrl = rawUrl.length > 35 ? rawUrl.substring(0, 35) + '...' : rawUrl;
-          const deleteBtn = isGlobal ? '' : '<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="' + escHtml(item._id) + '">Delete</button>';
+          const deleteBtn = '<button type="button" class="btn btn-danger btn-sm" data-action="delete" data-id="' + escHtml(item._id) + '">Delete</button>';
 
           return '<tr data-id="' + escHtml(item._id) + '">' +
             '<td>' + scopeBadge + '</td>' +
@@ -994,12 +1018,13 @@ const renderAdminPage = (currentData) => `
       document.getElementById('changeLog').value = item.changeLog || '';
       document.getElementById('targetPlatform').value = item.platform || 'all';
       
-      if (item.key === 'default') {
-        document.getElementById('targetKeys').value = '';
+      const targetKeysVal = Array.isArray(item.targetKeys) ? item.targetKeys.join(', ') : (item.targetKeys || '');
+      document.getElementById('targetKeys').value = targetKeysVal;
+
+      if (!targetKeysVal) {
         submitUpdateBtn.innerText = 'Save Global Release (v' + item.version + ')';
       } else {
-        document.getElementById('targetKeys').value = Array.isArray(item.targetKeys) ? item.targetKeys.join(', ') : (item.targetKeys || '');
-        submitUpdateBtn.innerText = 'Save Release Rule (v' + item.version + ')';
+        submitUpdateBtn.innerText = 'Save Targeted Release (v' + item.version + ')';
       }
       setStatus('Editing release configuration.', 'success');
       document.querySelector('#updateModal .modal-content')?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1273,7 +1298,9 @@ export const updateVersion = async (req, res, next) => {
         url: resolvedUrl,
         changeLog: String(changeLog).trim(),
         platform: targetPlatform,
+        targetKeys: [],
         status: 'success',
+        active: true,
       },
       {
         upsert: true,
