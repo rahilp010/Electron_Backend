@@ -46,7 +46,6 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
   };
 
   try {
-    // 1. If key provided, check targeted key rule for requested platform or universal
     if (activationKey) {
       const rawKey = String(activationKey).trim().toUpperCase();
       const strippedKey = rawKey.replace(/[^A-Za-z0-9]/g, '');
@@ -73,7 +72,6 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
       }
     }
 
-    // 2. Check platform-specific global release rule (excluding key-targeted releases)
     if (platform !== 'all') {
       const platformRecord = await VersionConfig.findOne({
         $or: [{ platform }, { key: platform }],
@@ -95,7 +93,6 @@ const getVersionRecord = async (activationKey = null, clientPlatform = 'all') =>
       }
     }
 
-    // 3. Fallback to default/universal global release rule (excluding key-targeted releases)
     let versionRecord = await VersionConfig.findOne({
       $or: [{ key: 'default' }, { platform: 'all' }],
       active: { $ne: false },
@@ -170,15 +167,6 @@ const buildCloudinaryDownloadUrl = (secureUrl, fileName = '') => {
   return secureUrl;
 };
 
-const isZipFile = (file) => {
-  if (!file) {
-    return false;
-  }
-
-  const lowerName = String(file.originalname || file.name || '').toLowerCase();
-  return lowerName.endsWith('.zip');
-};
-
 const escapeHtml = (value) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -208,6 +196,24 @@ const renderAdminPage = (currentData) => `
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#f5f7f4" />
+  <script>
+    (() => {
+      const root = document.documentElement;
+      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      let storedTheme = null;
+      try {
+        storedTheme = localStorage.getItem('envy-theme') || localStorage.getItem('theme');
+      } catch (error) {
+        console.warn('Theme preference could not be read:', error);
+      }
+      const hasStoredTheme = storedTheme === 'dark' || storedTheme === 'light';
+      const theme = hasStoredTheme ? storedTheme : systemTheme;
+      root.dataset.theme = theme;
+      root.dataset.themePreference = hasStoredTheme ? 'manual' : 'system';
+      document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#0b110e' : '#f5f7f4';
+    })();
+  </script>
   <title>Envy ERP | Version Control</title>
   <link rel="icon" type="image/png" href="/updates/services/Envy.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -215,21 +221,56 @@ const renderAdminPage = (currentData) => `
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --accent-blue: #60a5fa;
-      --bg-dark: #16161b;
-      --bg-surface: #24242d;
-      --bg-input: #16161b;
-      --accent-primary: #daf4aa;
-      --accent-hover: #cbe699;
-      --border-color: rgba(255, 255, 255, 0.1);
-      --border-focus: rgba(218, 244, 170, 0.4);
-      --text-main: #ffffff;
-      --text-dim: #9ca3af;
+      color-scheme: light;
+      --accent-blue: #176b50;
+      --bg-dark: #f5f7f4;
+      --bg-surface: #ffffff;
+      --bg-input: #fbfcfb;
+      --accent-primary: #176b50;
+      --accent-hover: #10543e;
+      --border-color: #e1e8e3;
+      --border-focus: rgba(23, 107, 80, 0.35);
+      --text-main: #17231f;
+      --text-dim: #68766f;
       --error-red: #f87171;
-      --success-green: #34d399;
+      --success-green: #16865c;
       --warning-amber: #fbbf24;
-      --modal-bg: #24242d;
+      --modal-bg: #ffffff;
+      --accent-contrast: #ffffff;
+      --shadow-modal: 0 28px 90px rgba(25, 51, 39, .18);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --accent-blue: #67cba5;
+      --bg-dark: #0b110e;
+      --bg-surface: #121a17;
+      --bg-input: #101614;
+      --accent-primary: #29b889;
+      --accent-hover: #37d6a4;
+      --border-color: #27362f;
+      --border-focus: rgba(55, 214, 164, .4);
+      --text-main: #f0fdf4;
+      --text-dim: #96a19b;
+      --success-green: #49c98a;
+      --modal-bg: #121a17;
+      --accent-contrast: #0b110e;
+      --shadow-modal: 0 28px 90px rgba(0, 0, 0, .62);
+    }
+
+    /* Circular reveal transition */
+    ::view-transition-old(root),
+    ::view-transition-new(root) {
+      animation: none;
+      mix-blend-mode: normal;
+    }
+    ::view-transition-old(root) {
+      z-index: 1;
+    }
+    ::view-transition-new(root) {
+      z-index: 2;
+    }
+
     * { box-sizing: border-box; margin: 0; padding: 0; }
     html { width: 100%; min-height: 100%; }
     body {
@@ -247,54 +288,26 @@ const renderAdminPage = (currentData) => `
     }
     
     /* Background Orbs */
-    .bg-orb-1 {
-      position: absolute; top: -10%; left: -10%; width: 400px; height: 400px;
-      background: rgba(218, 244, 170, 0.05); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1;
-    }
-    .bg-orb-2 {
-      position: absolute; bottom: -10%; right: -10%; width: 500px; height: 500px;
-      background: rgba(99, 102, 241, 0.05); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1;
-    }
+    .bg-orb-1 { position: absolute; top: -10%; left: -10%; width: 400px; height: 400px; background: rgba(218, 244, 170, 0.05); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1; }
+    .bg-orb-2 { position: absolute; bottom: -10%; right: -10%; width: 500px; height: 500px; background: rgba(99, 102, 241, 0.05); border-radius: 50%; filter: blur(100px); pointer-events: none; z-index: 1; }
 
-    .ui-tags {
-      position: absolute; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: calc(100vw - 32px);
-    }
+    .ui-tags { position: absolute; display: flex; flex-direction: column; gap: 8px; z-index: 20; max-width: calc(100vw - 32px); }
     .ui-tags.tl { top: clamp(16px, 3vw, 32px); left: clamp(16px, 3vw, 32px); align-items: flex-start; }
     .ui-tags.tr { top: clamp(16px, 3vw, 32px); right: clamp(16px, 3vw, 32px); align-items: flex-end; }
-    .tag {
-      background-color: var(--bg-surface);
-      border: 1px solid var(--border-color);
-      color: var(--text-dim);
-      font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 6px 12px;
-      letter-spacing: 0.05em; border-radius: 8px; backdrop-filter: blur(10px);
-    }
+    .tag { background-color: var(--bg-surface); border: 1px solid var(--border-color); color: var(--text-dim); font-size: 11px; font-weight: 600; text-transform: uppercase; padding: 6px 12px; letter-spacing: 0.05em; border-radius: 8px; backdrop-filter: blur(10px); }
     
-    .hero-content {
-      position: relative; z-index: 30; text-align: center; display: flex; flex-direction: column; align-items: center; padding: 0 16px; width: 100%; max-width: 100%;
-    }
-    .hero-title {
-      font-size: clamp(48px, 12vw, 150px); font-weight: 300; letter-spacing: -0.04em; color: var(--text-main); line-height: 0.9; margin-bottom: 24px;
-    }
-    .hero-subtitle {
-      font-size: 16px; color: var(--text-dim); margin-bottom: 32px; font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase;
-    }
+    .hero-content { position: relative; z-index: 30; text-align: center; display: flex; flex-direction: column; align-items: center; padding: 0 16px; width: 100%; max-width: 100%; }
+    .hero-title { font-size: clamp(48px, 12vw, 150px); font-weight: 300; letter-spacing: -0.04em; color: var(--text-main); line-height: 0.9; margin-bottom: 24px; }
+    .hero-subtitle { font-size: 16px; color: var(--text-dim); margin-bottom: 32px; font-weight: 400; letter-spacing: 0.5px; text-transform: uppercase; }
 
-    .update-btn {
-      background-color: var(--accent-primary); color: #16161b; border: none; padding: 14px 40px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: all 0.3s ease; border-radius: 12px; font-family: 'Poppins', sans-serif; box-shadow: 0 4px 14px rgba(218, 244, 170, 0.15);
-    }
-    .update-btn:hover {
-      background-color: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(218, 244, 170, 0.25);
-    }
+    .update-btn { background-color: var(--accent-primary); color: #16161b; border: none; padding: 14px 40px; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; transition: all 0.3s ease; border-radius: 12px; font-family: 'Poppins', sans-serif; box-shadow: 0 4px 14px rgba(218, 244, 170, 0.15); }
+    .update-btn:hover { background-color: var(--accent-hover); transform: translateY(-2px); box-shadow: 0 6px 20px rgba(218, 244, 170, 0.25); }
 
     /* Modals */
-    .modal-overlay {
-      position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px); z-index: 100; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease; padding: 16px; overflow-y: auto; box-sizing: border-box;
-    }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(8px); z-index: 100; display: none; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.3s ease; padding: 16px; overflow-y: auto; box-sizing: border-box; }
     .modal-overlay.active { display: flex; opacity: 1; }
     
-    .modal-content {
-      background: var(--bg-surface); border: 1px solid var(--border-color); width: min(1200px, 95%); padding: clamp(24px, 4vw, 40px); border-radius: 24px; position: relative; transform: translateY(20px); transition: transform 0.3s ease; max-height: calc(100dvh - 32px); overflow-y: auto; overflow-x: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-    }
+    .modal-content { background: var(--bg-surface); border: 1px solid var(--border-color); width: min(1200px, 95%); padding: clamp(24px, 4vw, 40px); border-radius: 24px; position: relative; transform: translateY(20px); transition: transform 0.3s ease; max-height: calc(100dvh - 32px); overflow-y: auto; overflow-x: hidden; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
     .modal-content.small-modal { width: min(450px, 95%); }
     .modal-overlay.active .modal-content { transform: translateY(0); }
     
@@ -304,14 +317,10 @@ const renderAdminPage = (currentData) => `
     .modal-content::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
     .modal-content::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 
-    .modal-title {
-      font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 8px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 12px;
-    }
+    .modal-title { font-size: 24px; font-weight: 700; color: var(--text-main); margin-bottom: 8px; letter-spacing: -0.5px; display: flex; align-items: center; gap: 12px; }
     .modal-subtitle { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
     
-    .modal-close {
-      position: absolute; top: 24px; right: 24px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-dim); border-radius: 50%; cursor: pointer; font-size: 18px; transition: all 0.2s ease;
-    }
+    .modal-close { position: absolute; top: 24px; right: 24px; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: var(--bg-input); border: 1px solid var(--border-color); color: var(--text-dim); border-radius: 50%; cursor: pointer; font-size: 18px; transition: all 0.2s ease; }
     .modal-close:hover { color: var(--text-main); background: rgba(255,255,255,0.1); }
 
     /* Forms */
@@ -319,14 +328,10 @@ const renderAdminPage = (currentData) => `
     .form-group { width: 100%; display: flex; flex-direction: column; }
     .form-label { font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; letter-spacing: 0.5px; }
     
-    .form-input {
-      width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; color: #fff; font-family: 'Poppins', sans-serif; font-size: 13px; outline: none; transition: all 0.3s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-    }
+    .form-input { width: 100%; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 12px; padding: 12px 16px; color: #fff; font-family: 'Poppins', sans-serif; font-size: 13px; outline: none; transition: all 0.3s ease; box-shadow: inset 0 2px 4px rgba(0,0,0,0.1); }
     .form-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(218, 244, 170, 0.1); }
     .form-input::placeholder { color: #6b7280; }
-    
     .form-textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
-    
     select.form-input { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 5l3 3 3-3'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 16px center; padding-right: 40px; cursor: pointer; }
 
     /* Upload Box */
@@ -356,7 +361,8 @@ const renderAdminPage = (currentData) => `
     .btn { padding: 12px 24px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; transition: all 0.2s ease; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border: 1px solid transparent; height: 46px; font-family: 'Poppins', sans-serif; gap: 8px; }
     .btn-primary { background: var(--accent-primary); color: #16161b; box-shadow: 0 4px 14px rgba(218, 244, 170, 0.15); }
     .btn-primary:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 20px rgba(218, 244, 170, 0.25); }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }\n    #submitPassword { position: relative; z-index: 5; pointer-events: auto; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+    #submitPassword { position: relative; z-index: 5; pointer-events: auto; }
     .btn-secondary { background: var(--bg-input); border-color: var(--border-color); color: var(--text-main); }
     .btn-secondary:hover { border-color: rgba(255,255,255,0.2); background: rgba(255,255,255,0.05); }
     .btn-danger { background: rgba(248, 113, 113, 0.1); color: var(--error-red); border-color: rgba(248, 113, 113, 0.2); }
@@ -415,9 +421,107 @@ const renderAdminPage = (currentData) => `
     #submitPassword { position: relative; z-index: 100001; pointer-events: auto; cursor: pointer; }
     #submitPassword:disabled { cursor: wait; opacity: .65; }
     @media (max-width: 600px) { .modal-overlay { align-items: flex-start; padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); } .modal-content { width: 100%; max-width: 100%; max-height: calc(100dvh - 32px); padding: 20px; border-radius: 18px; } .modal-content.small-modal { width: 100%; max-width: 100%; } .modal-actions { width: 100%; flex-direction: column-reverse; gap: 10px; } .modal-actions .btn { width: 100%; min-height: 46px; } .form-input { min-height: 46px; font-size: 14px; } }
+
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; transition: background-color .45s ease, color .45s ease, border-color .45s ease; }
+    .admin-topbar { position: absolute; top: 0; left: 0; right: 0; z-index: 40; min-height: 78px; padding: 16px clamp(16px, 4vw, 48px); display: flex; align-items: center; justify-content: space-between; }
+    .admin-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--text-main); text-decoration: none; font-size: 13px; font-weight: 750; letter-spacing: -.03em; }
+    .admin-brand img { width: 36px; height: 36px; border-radius: 11px; object-fit: cover; }
+    .admin-brand span { display: grid; grid-template-columns: auto auto; column-gap: 4px; align-items: center; }
+    .admin-brand strong { font-weight: 500; }
+    .admin-brand small { grid-column: 1 / -1; margin-top: 2px; color: var(--text-dim); font-size: 8px; letter-spacing: .14em; }
+    .admin-topbar-actions { display: flex; align-items: center; gap: 12px; }
+    .dashboard-link { color: var(--text-dim); text-decoration: none; font-size: 12px; font-weight: 650; }
+    .dashboard-link:hover { color: var(--accent-primary); }
+    
+    .theme-toggle { background: transparent; border: none; padding: 8px; cursor: pointer; color: var(--text-dim); border-radius: 50%; display: grid; place-items: center; transition: background 0.2s, color 0.2s; width: 40px; height: 40px; }
+    .theme-toggle:hover { background: rgba(128, 128, 128, 0.15); color: var(--text-main); }
+    .theme-toggle svg { width: 18px; height: 18px; transition: transform 0.3s ease; }
+    .theme-toggle:active svg { transform: scale(0.8) rotate(-25deg); }
+    
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .bg-orb-1 { background: rgba(23, 107, 80, .09); }
+    .bg-orb-2 { background: rgba(213, 240, 123, .13); }
+    [data-theme="dark"] .bg-orb-1 { background: rgba(41, 184, 137, .12); }
+    [data-theme="dark"] .bg-orb-2 { background: rgba(213, 240, 123, .06); }
+    .ui-tags.tl, .ui-tags.tr { top: 92px; }
+    .tag { background: var(--bg-surface); border-color: var(--border-color); backdrop-filter: blur(12px); }
+    .hero-content { width: min(690px, calc(100% - 32px)); margin: 50px auto 0; padding: clamp(38px, 7vw, 76px) 28px; border: 1px solid var(--border-color); border-radius: 26px; background: var(--bg-surface); box-shadow: 0 22px 60px rgba(25, 51, 39, .08); }
+    [data-theme="dark"] .hero-content { box-shadow: 0 22px 70px rgba(0, 0, 0, .3); }
+    .console-eyebrow { display: flex; align-items: center; gap: 9px; margin-bottom: 24px; color: var(--accent-primary); font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+    .console-eyebrow span { width: 7px; height: 7px; border-radius: 50%; background: var(--success-green); box-shadow: 0 0 0 4px rgba(73, 166, 120, .14); }
+    .hero-title { margin-bottom: 18px; font-weight: 650; letter-spacing: -.065em; }
+    .hero-subtitle { max-width: 450px; margin-bottom: 28px; line-height: 1.7; letter-spacing: .04em; }
+    .update-btn { border-radius: 999px; background: var(--accent-primary); color: var(--accent-contrast); box-shadow: none; }
+    .update-btn:hover { background: var(--accent-hover); box-shadow: 0 8px 24px rgba(23, 107, 80, .18); }
+    .current-info { bottom: 28px; }
+    .current-info .tag { border-radius: 999px; padding: 9px 14px; }
+    .modal-overlay { background: rgba(12, 22, 17, .52); backdrop-filter: blur(12px); }
+    [data-theme="dark"] .modal-overlay { background: rgba(0, 0, 0, .68); }
+    .modal-content { width: min(1080px, 96%); padding: clamp(24px, 4vw, 42px); border-radius: 24px; background: var(--modal-bg); border-color: var(--border-color); box-shadow: var(--shadow-modal); transform: translateY(18px) scale(.985); transition: transform .28s cubic-bezier(.2,.8,.2,1), background-color .35s, border-color .35s; }
+    .modal-overlay.active .modal-content { transform: translateY(0) scale(1); }
+    .modal-content.small-modal { width: min(440px, 95%); }
+    .release-modal-kicker { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; color: var(--accent-primary); font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+    .release-modal-kicker span { width: 7px; height: 7px; border-radius: 50%; background: var(--success-green); box-shadow: 0 0 0 4px rgba(73, 166, 120, .14); }
+    .modal-title { padding-right: 44px; font-size: clamp(21px, 3vw, 28px); letter-spacing: -.045em; }
+    .modal-subtitle { max-width: 680px; margin-bottom: 28px; line-height: 1.7; }
+    .modal-close { top: 24px; right: 24px; background: var(--bg-input); color: var(--text-dim); }
+    .modal-close:hover { color: var(--text-main); background: var(--bg-dark); }
+    .form-grid { gap: 17px; }
+    .form-label { color: var(--text-dim); letter-spacing: .09em; }
+    .form-input { color: var(--text-main); background: var(--bg-input); border-color: var(--border-color); border-radius: 11px; box-shadow: none; }
+    .form-input:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--border-focus); }
+    .form-input::placeholder { color: var(--text-dim); opacity: .75; }
+    .upload-split-container { background: var(--bg-input); border-color: var(--border-color); border-radius: 16px; }
+    .upload-box { border: 1px dashed var(--border-color); }
+    .upload-box:hover { background: var(--bg-surface); }
+    .upload-icon { background: var(--bg-surface); color: var(--accent-primary); }
+    .modal-actions { margin-top: 24px; border-color: var(--border-color); }
+    .btn { border-radius: 999px; font-family: inherit; letter-spacing: .03em; }
+    .btn-primary { background: var(--accent-primary); color: var(--accent-contrast); box-shadow: none; }
+    .btn-primary:hover:not(:disabled) { background: var(--accent-hover); box-shadow: 0 7px 20px rgba(23, 107, 80, .16); }
+    .btn-secondary { background: var(--bg-input); border-color: var(--border-color); color: var(--text-main); }
+    .btn-secondary:hover { border-color: var(--accent-primary); background: var(--bg-surface); }
+    .targeted-list-container { margin-top: 36px; padding-top: 28px; }
+    .targeted-list-title h4 { font-size: 18px; letter-spacing: -.03em; }
+    .table-responsive { background: var(--bg-input); border-radius: 14px; }
+    .release-table th { background: var(--bg-surface); }
+    .release-table td { border-bottom-color: var(--border-color); }
+    .release-table tr:hover td { background: var(--bg-surface); }
+    .badge-platform { background: var(--bg-surface); }
+    body, .tag, .hero-content, .modal-content, .form-input, .upload-split-container, .table-responsive, .release-table th, .release-table td { transition: background-color .45s ease, color .45s ease, border-color .45s ease; }
+    @media (max-width: 768px) {
+      .admin-topbar { min-height: 68px; }
+      .ui-tags.tl, .ui-tags.tr { top: 82px; }
+      .hero-content { margin-top: 62px; }
+      .current-info { position: static; margin: 24px auto 20px; }
+      .modal-content { padding: 26px; }
+    }
+    @media (max-width: 480px) {
+      .admin-brand small { display: none; }
+      .dashboard-link { font-size: 11px; }
+      .admin-topbar-actions { gap: 8px; }
+      .hero-content { padding: 38px 18px; }
+      .modal-content { padding: 22px 18px; }
+      .modal-close { top: 16px; right: 16px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body>
+  <header class="admin-topbar">
+    <a class="admin-brand" href="/" aria-label="Envy Group dashboard">
+      <img src="/updates/services/Envy.png" alt="" width="36" height="36">
+      <span>ENVY <strong>GROUP</strong><small>RELEASE CONTROL</small></span>
+    </a>
+    <div class="admin-topbar-actions">
+      <a class="dashboard-link" href="/">Back to dashboard <span aria-hidden="true">↗</span></a>
+      <button type="button" id="theme-toggle" class="theme-toggle" aria-label="Switch theme" aria-pressed="false" title="Switch theme">
+        <span class="sr-only">Switch theme</span>
+      </button>
+    </div>
+  </header>
   <!-- Background Orbs -->
   <div class="bg-orb-1"></div>
   <div class="bg-orb-2"></div>
@@ -431,7 +535,8 @@ const renderAdminPage = (currentData) => `
     <div class="tag">Admin Panel</div>
   </div>
 
-  <main class="hero-content">
+  <main>
+    <div class="console-eyebrow"><span></span> Release management</div>
     <h1 class="hero-title">ENVY ERP</h1> 
     <p class="hero-subtitle">Distribution & Version Management Console</p>
     <button class="update-btn" id="openUpdateBtn">Manage Releases</button>
@@ -468,9 +573,10 @@ const renderAdminPage = (currentData) => `
   <div class="modal-overlay" id="updateModal">
     <div class="modal-content">
       <button type="button" class="modal-close" id="closeUpdateModal" aria-label="Close">&times;</button>
+      <div class="release-modal-kicker"><span></span> Release workspace</div>
       <div class="modal-title">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--accent-primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
-        Release Management
+        Manage product releases
       </div>
       <p class="modal-subtitle">Upload new builds, manage platform releases, and configure targeted updates.</p>
       
@@ -585,6 +691,83 @@ const renderAdminPage = (currentData) => `
   </div>
 
   <script>
+    const themeBtn = document.getElementById('theme-toggle');
+    const themeRoot = document.documentElement;
+    const sunIcon = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>';
+    const moonIcon = '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+
+    function applyTheme(theme) {
+      themeRoot.dataset.theme = theme;
+      document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#0b110e' : '#f5f7f4';
+      themeBtn.innerHTML = (theme === 'dark' ? sunIcon : moonIcon) + '<span class="sr-only">Switch theme</span>';
+      themeBtn.setAttribute('aria-pressed', String(theme === 'dark'));
+      themeBtn.setAttribute('aria-label', 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' mode');
+    }
+
+    function persistTheme(theme) {
+      themeRoot.dataset.themePreference = 'manual';
+      try {
+        localStorage.setItem('envy-theme', theme);
+      } catch (error) {
+        console.error('Theme preference could not be saved:', error);
+      }
+    }
+
+    applyTheme(themeRoot.dataset.theme);
+    
+    // Updated cubic-bezier animation matching landingPage_2.js
+    themeBtn.addEventListener('click', (event) => {
+      const nextTheme = themeRoot.dataset.theme === 'dark' ? 'light' : 'dark';
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (reduceMotion || typeof document.startViewTransition !== 'function') {
+        applyTheme(nextTheme);
+        persistTheme(nextTheme);
+        return;
+      }
+
+      const bounds = themeBtn.getBoundingClientRect();
+      const x = event.detail === 0 ? bounds.left + bounds.width / 2 : event.clientX;
+      const y = event.detail === 0 ? bounds.top + bounds.height / 2 : event.clientY;
+      const radius = Math.hypot(Math.max(x, window.innerWidth - x), Math.max(y, window.innerHeight - y));
+
+      try {
+        const transition = document.startViewTransition(() => {
+          applyTheme(nextTheme);
+          persistTheme(nextTheme);
+        });
+
+        transition.ready.then(() => {
+          document.documentElement.animate(
+            {
+              clipPath: [
+               'circle(0px at ' + x + 'px ' + y + 'px)',
+                'circle(' + radius + 'px at ' + x + 'px ' + y + 'px)'
+              ]
+            },
+            {
+              duration: 850,
+              easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+              pseudoElement: '::view-transition-new(root)'
+            }
+          );
+        }).catch((error) => {
+          console.warn('Theme reveal animation failed:', error);
+        });
+      } catch (error) {
+        console.warn('View transition failed:', error);
+        applyTheme(nextTheme);
+        persistTheme(nextTheme);
+      }
+    });
+
+    const colorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+    const updateSystemTheme = (event) => {
+      if (themeRoot.dataset.themePreference !== 'manual') applyTheme(event.matches ? 'dark' : 'light');
+    };
+    if (typeof colorScheme.addEventListener === 'function') colorScheme.addEventListener('change', updateSystemTheme);
+    else colorScheme.addListener(updateSystemTheme);
+
     const openUpdateBtn = document.getElementById('openUpdateBtn');
     const passwordModal = document.getElementById('passwordModal');
     const updateModal = document.getElementById('updateModal');
@@ -1328,7 +1511,6 @@ export const getTargetedVersions = async (req, res, next) => {
     if (!isAdminAuthenticated(req)) {
       return res.status(401).json({ message: 'Unauthorized.' });
     }
-    // Return all records (default first, then targeted entries by creation date)
     const allRules = await VersionConfig.find({}).sort({ key: 1, createdAt: -1 }).lean();
     return res.status(200).json(allRules);
   } catch (error) {

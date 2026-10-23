@@ -97,8 +97,8 @@ import productRouter from './API/products/productRouter.js'
 import clientRouter from './API/clients/clientRouter.js'
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getVersionAdminPage } from './API/version/versionController.js';
 import versionRouter from './API/version/versionRouter.js';
+import { renderLandingPage } from './services/landingPage.js';
 import purchaseRouter from './API/purchase/purchaseRouter.js';
 import salesRouter from './API/sales/salesRouter.js';
 import accountRouter from './API/bankAccounts/accounts/accountRouter.js';
@@ -153,7 +153,7 @@ const app = express();
     app.use(cookieParser());
 
     app.get('/', (req, res) => {
-        getVersionAdminPage(req, res);
+        res.status(200).type('html').send(renderLandingPage());
     })
     app.get('/favicon.ico', (req, res) => {
         res.sendFile(path.join(__dirname, 'services', 'Envy.png'));

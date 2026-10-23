@@ -1,6 +1,5 @@
-// Verification script: renders the admin page HTML from renderAdminPage()
-// and validates that (1) the inline <script> has no syntax errors and
-// (2) every element referenced via getElementById exists in the markup.
+// Verification script: renders the admin page HTML and validates its scripts,
+// referenced elements, theme controls, and release-management UI.
 import { getVersionAdminPage } from '../API/version/versionController.js';
 
 const fakeRes = {
@@ -18,25 +17,27 @@ await getVersionAdminPage({}, fakeRes, (err) => {
 const html = fakeRes.body;
 let failures = 0;
 
-// 1. Extract the inline script exactly as served
-const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
-if (!scriptMatch) {
+// 1. Extract and syntax-check every inline script exactly as served
+const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+if (!scripts.length) {
   console.error('FAIL: no inline <script> found');
   process.exit(1);
 }
-const script = scriptMatch[1];
 
-// 2. Syntax check (parse only, no execution)
-try {
-  new Function(script);
-  console.log('PASS: inline script parses without syntax errors');
-} catch (err) {
-  console.error('FAIL: inline script has a syntax error:', err.message);
-  failures++;
+for (const [index, scriptMatch] of scripts.entries()) {
+  try {
+    new Function(scriptMatch[1]);
+    console.log(`PASS: inline script ${index + 1} parses without syntax errors`);
+  } catch (err) {
+    console.error(`FAIL: inline script ${index + 1} has a syntax error:`, err.message);
+    failures++;
+  }
 }
 
-// 3. Every getElementById target must exist as id="..." in the markup
-const referenced = [...script.matchAll(/getElementById\((['"])(.*?)\1\)/g)].map((m) => m[2]);
+// 2. Every getElementById target must exist as id="..." in the markup
+const referenced = scripts.flatMap((scriptMatch) =>
+  [...scriptMatch[1].matchAll(/getElementById\((['"])(.*?)\1\)/g)].map((match) => match[2])
+);
 const definedIds = new Set([...html.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
 const missing = [...new Set(referenced)].filter((id) => !definedIds.has(id));
 if (missing.length) {
@@ -46,7 +47,7 @@ if (missing.length) {
   console.log(`PASS: all ${new Set(referenced).size} referenced element ids exist`);
 }
 
-// 4. No residual onclick attributes that depend on broken escapes
+// 3. No residual onclick attributes that depend on broken escapes
 const badOnclick = [...html.matchAll(/onclick="[^"]*\\'/g)];
 if (badOnclick.length) {
   console.error(`FAIL: ${badOnclick.length} onclick attribute(s) contain raw backslash-quote escapes`);
@@ -55,8 +56,8 @@ if (badOnclick.length) {
   console.log('PASS: no broken onclick escapes in served HTML');
 }
 
-// 5. Expected interactive elements present
-for (const id of ['openUpdateBtn', 'passwordModal', 'updateModal', 'submitPassword', 'clearFormBtn', 'newReleaseBtn', 'releasesTableBody', 'uploadZipBtn', 'copyDownloadUrlBtn']) {
+// 4. Expected interactive elements present
+for (const id of ['openUpdateBtn', 'passwordModal', 'updateModal', 'submitPassword', 'clearFormBtn', 'newReleaseBtn', 'releasesTableBody', 'uploadZipBtn', 'copyDownloadUrlBtn', 'theme-toggle']) {
   if (!definedIds.has(id)) {
     console.error(`FAIL: expected element #${id} missing`);
     failures++;
@@ -64,13 +65,28 @@ for (const id of ['openUpdateBtn', 'passwordModal', 'updateModal', 'submitPasswo
 }
 console.log('PASS: all expected interactive elements present');
 
-// 6. Modal open/close CSS classes referenced by JS exist in stylesheet
-for (const cls of ['.modal-overlay', '.modal-overlay.active', 'body.modal-open']) {
+// 5. Theme and modal styling hooks used by the UI exist in the stylesheet.
+for (const cls of ['.modal-overlay', '.modal-overlay.active', 'body.modal-open', '[data-theme="dark"]', '.release-modal-kicker', '::view-transition-new(root)']) {
   if (!html.includes(cls)) {
     console.error(`FAIL: CSS hook "${cls}" missing`);
     failures++;
   }
 }
-console.log('PASS: modal CSS hooks present');
+console.log('PASS: theme and release modal CSS hooks present');
+
+for (const expected of [
+  "window.matchMedia('(prefers-color-scheme: dark)')",
+  "localStorage.getItem('envy-theme') || localStorage.getItem('theme')",
+  "localStorage.setItem('envy-theme', theme)",
+  'document.startViewTransition',
+  "window.matchMedia('(prefers-reduced-motion: reduce)')",
+  'Release workspace',
+  'Manage product releases',
+]) {
+  if (!html.includes(expected)) {
+    console.error(`FAIL: expected theme or release UI content missing: ${expected}`);
+    failures++;
+  }
+}
 
 process.exit(failures ? 1 : 0);
