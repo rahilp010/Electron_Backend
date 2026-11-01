@@ -24,7 +24,7 @@ if (process.platform === 'win32') {
     if (isWmic(command)) {
       console.log('🔄 Intercepting wmic.exe spawn call, redirecting to PowerShell');
       const psProcess = originalSpawn.call(this, 'powershell.exe', PS_ARGS, options);
-      psProcess.stderr = { on: () => {}, pipe: () => {} };
+      psProcess.stderr = { on: () => { }, pipe: () => { } };
       return psProcess;
     }
     return originalSpawn.apply(this, arguments);
@@ -109,7 +109,7 @@ import pendingReport from './API/utils/pendingReportController.js';
 import authRouter from './API/Auth/authRouter.js';
 import reportRouter from './API/utils/reportController.js'
 import activationRouter from './API/activation/activationRouter.js';
-import whatsappRouter from './API/whatsapp/whatsappRouter.js';
+// import whatsappRouter from './API/whatsapp/whatsappRouter.js';
 import syncRouter from './API/sync/syncRouter.js';
 import { initSyncSocket } from './services/syncSocket.js';
 
@@ -120,81 +120,81 @@ const app = express();
 // const redis = new redis()
 
 (async () => {
-    console.log('🟢🟢 Starting server...🟢🟢');
-    try {
+  console.log('🟢🟢 Starting server...🟢🟢');
+  try {
+    await connectDB();
+  } catch (dbError) {
+    console.error('⚠️ Database connection failed. Running server in offline/local mode.', dbError.message);
+    // Retry in the background so the server comes up as soon as MongoDB is reachable
+    // (connectDB no longer caches the failed promise, so a retry is possible).
+    const retryDb = async () => {
+      try {
         await connectDB();
-    } catch (dbError) {
-        console.error('⚠️ Database connection failed. Running server in offline/local mode.', dbError.message);
-        // Retry in the background so the server comes up as soon as MongoDB is reachable
-        // (connectDB no longer caches the failed promise, so a retry is possible).
-        const retryDb = async () => {
-            try {
-                await connectDB();
-                console.log('✅ Database connected on retry.');
-            } catch {
-                setTimeout(retryDb, 10_000); // try again in 10s
-            }
-        };
-        setTimeout(retryDb, 10_000);
-    }
+        console.log('✅ Database connected on retry.');
+      } catch {
+        setTimeout(retryDb, 10_000); // try again in 10s
+      }
+    };
+    setTimeout(retryDb, 10_000);
+  }
 
-    app.use(cors({
-        origin: (origin, callback) => {
-            if (!origin || ['http://localhost:5173', config.apixBase].includes(origin)) {
-                callback(null, true);
-            } else {
-                callback(null, false); // return false instead of throwing
-            }
-        },
-        credentials: true,
-    }));
+  app.use(cors({
+    origin: (origin, callback) => {
+      if (!origin || ['http://localhost:5173', config.apixBase].includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, false); // return false instead of throwing
+      }
+    },
+    credentials: true,
+  }));
 
-    app.use(express.json());
-    app.use(cookieParser());
+  app.use(express.json());
+  app.use(cookieParser());
 
-    app.get('/', (req, res) => {
-        res.status(200).type('html').send(renderLandingPage());
-    })
-    app.get('/favicon.ico', (req, res) => {
-        res.sendFile(path.join(__dirname, 'services', 'Envy.png'));
-    });
-    app.use('/api/products', productRouter);
-    app.use('/api/clients', clientRouter);
-    app.use('/api/purchase', purchaseRouter);
-    app.use('/api/sales', salesRouter);
-    app.use('/api/account', accountRouter);
-    app.use('/api/ledger', ledgerRouter);
-    app.use('/api/transfer', transferRouter)
-    app.use('/api/analytics', analyticsRouter)
-    app.use('/api/version', versionRouter)
-    app.use('/api/reports', pendingReport)
-    app.use('/api/auth', authRouter)
-    app.use('/api/activation', activationRouter)
-    app.use('/api/whatsapp', whatsappRouter)
-    app.use('/api/sync', syncRouter)
-    app.use('/updates', express.static(__dirname))
-    app.use('/api/generate', reportRouter)
+  app.get('/', (req, res) => {
+    res.status(200).type('html').send(renderLandingPage());
+  })
+  app.get('/favicon.ico', (req, res) => {
+    res.sendFile(path.join(__dirname, 'services', 'Envy.png'));
+  });
+  app.use('/api/products', productRouter);
+  app.use('/api/clients', clientRouter);
+  app.use('/api/purchase', purchaseRouter);
+  app.use('/api/sales', salesRouter);
+  app.use('/api/account', accountRouter);
+  app.use('/api/ledger', ledgerRouter);
+  app.use('/api/transfer', transferRouter)
+  app.use('/api/analytics', analyticsRouter)
+  app.use('/api/version', versionRouter)
+  app.use('/api/reports', pendingReport)
+  app.use('/api/auth', authRouter)
+  app.use('/api/activation', activationRouter)
+  // app.use('/api/whatsapp', whatsappRouter)
+  app.use('/api/sync', syncRouter)
+  app.use('/updates', express.static(__dirname))
+  app.use('/api/generate', reportRouter)
 
-    app.get('/api/health', (req, res) => {
-        res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });
-    });
+  app.get('/api/health', (req, res) => {
+    res.status(200).json({ status: 'Server is running', timestamp: new Date().toISOString() });
+  });
 
-    // Global error handler
-    app.use((err, req, res, next) => {
-        console.error(err);
-        res.status(500).json({ error: 'Internal server error' });
-    });
+  // Global error handler
+  app.use((err, req, res, next) => {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  });
 
 
-    const server = app.listen(config.port, '0.0.0.0', () => {
-        console.log(`❗☑️ Server is running on port ${config.port}`);
-    });
+  const server = app.listen(config.port, '0.0.0.0', () => {
+    console.log(`❗☑️ Server is running on port ${config.port}`);
+  });
 
-    initSyncSocket(server);
+  initSyncSocket(server);
 
-    // Keep the process alive with a setInterval
-    setInterval(() => {}, 1000);
+  // Keep the process alive with a setInterval
+  setInterval(() => { }, 1000);
 })().catch(err => {
-    console.error('❗Server startup error:', err);
-    process.exit(1);
+  console.error('❗Server startup error:', err);
+  process.exit(1);
 });

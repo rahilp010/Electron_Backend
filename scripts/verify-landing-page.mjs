@@ -36,6 +36,10 @@ if (!scripts.length) {
 for (const product of ['Envy ERP', 'Envy Mobile', 'Envy Sync']) {
   if (!html.includes(product)) fail(`product "${product}" is missing`);
 }
+const mobileCard = html.match(/<article class="product-card">([\s\S]*?)<h3>Envy Mobile<\/h3>([\s\S]*?)<\/article>/);
+if (!mobileCard || !mobileCard[2].includes('class="product-status">Coming soon</span>')) {
+  fail('Envy Mobile is missing its coming-soon status');
+}
 for (const expected of [
   'rahilp704@gmail.com',
   'href="/api/version/admin"',

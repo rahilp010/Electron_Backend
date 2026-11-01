@@ -214,6 +214,55 @@ body,
     .product-card:hover { transform: translateY(-4px); border-color: var(--green); box-shadow: var(--shadow); }
     .product-icon { width: 43px; height: 43px; display: grid; place-items: center; border-radius: 13px; color: var(--green); background: var(--surface-alt); transition: background-color 0.4s, color 0.4s; }
     .product-icon svg { width: 22px; height: 22px; }
+    .product-card-heading { display: flex; align-items: center; }
+   .product-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 7px 0 10px;
+}
+
+.product-title-row h3 {
+  margin: 0;
+  line-height: 1.3;
+}
+    .product-status {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex-shrink: 0;
+  padding: 5px 11px;
+  border: 1px solid #e8c86f;
+  border-radius: 999px;
+  background: #fff5d8;
+  color: #74500a;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.4;
+  white-space: nowrap;
+  position: relative;
+  z-index: 2;
+}
+
+.product-status::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: #c58a0b;
+  box-shadow: 0 0 0 3px rgba(197, 138, 11, .16);
+}
+
+[data-theme="dark"] .product-status {
+  border-color: #705b2c;
+  background: #302817;
+  color: #f6d985;
+}
     .product-type { margin-top: 23px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; transition: color 0.4s; }
     
     h3 { margin: 7px 0 10px; font-size: 21px; letter-spacing: -.04em; }
@@ -363,7 +412,8 @@ body,
         </article>
         <article class="product-card">
           <div class="product-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M10 5h4m-3 13h2"/></svg></div>
-          <div class="product-type">Mobile application</div><h3>Envy Mobile</h3>
+          <div class="product-type">Mobile application</div>
+          <div class="product-title-row"><h3>Envy Mobile</h3><span class="product-status">Coming soon</span></div>
           <p>A mobile companion in the Envy ecosystem, bringing your business experience along wherever work takes you.</p>
           <a class="text-link" href="#inquiry">Enquire about Envy Mobile <span aria-hidden="true">↗</span></a>
         </article>
